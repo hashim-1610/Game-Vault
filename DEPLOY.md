@@ -11,20 +11,30 @@
 (Supabase's free Postgres works the same way if you prefer it — just grab
 its connection string instead.)
 
-## 2. Push this code to GitHub
+## 2. Set your invite code
+
+Open `config.py` and change `MASTER_INVITE_CODE` to something only you and
+your friends know. Anyone without this code can't register an account.
+You can change it again at any time by editing this file and redeploying —
+it doesn't affect existing accounts.
+
+## 3. Push this code to GitHub
 
 Create a new **public or private** repo containing:
 ```
 app.py
+game.py
+ui.py
 auth.py
 sounds.py
+config.py
 requirements.txt
 .gitignore
 ```
 Do **not** commit `.streamlit/secrets.toml` (the `.gitignore` already excludes it) —
 only commit `.streamlit/secrets.toml.example`.
 
-## 3. Deploy on Streamlit Community Cloud
+## 4. Deploy on Streamlit Community Cloud
 
 1. Go to https://share.streamlit.io, sign in with GitHub.
 2. Click **New app**, pick your repo, branch `main`, main file `app.py`.
@@ -36,7 +46,7 @@ only commit `.streamlit/secrets.toml.example`.
 4. Save. The app redeploys automatically and gives you a public
    `https://<something>.streamlit.app` link — that's your shareable link.
 
-## 4. Verify persistence
+## 5. Verify persistence
 
 Register an account, play a game (or forfeit-test with bots), check your
 Profile/Leaderboard. Redeploy the app (or just wait — Streamlit Cloud apps

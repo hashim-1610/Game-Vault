@@ -208,6 +208,57 @@ button[kind="primary"], .stButton > button[kind="primary"] {
 [data-testid="stMetricLabel"] { color: var(--gold-light) !important; }
 [data-testid="stMetricValue"] { color: var(--cream) !important; font-family: 'Fraunces', serif !important; }
 
+/* ---- Avatars & seat ring (mirrors a table view, "you" always at bottom) ---- */
+.avatar {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 2px solid var(--gold);
+  object-fit: cover;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.avatar-fallback {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 2px solid var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fraunces', serif; font-weight: 700; font-size: 1.1rem;
+  color: var(--teal-900) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.seat-ring {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  grid-template-areas: ". top ." "left mid right" ". bottom .";
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.seat-pos { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.seat-pos.pos-top { grid-area: top; }
+.seat-pos.pos-left { grid-area: left; }
+.seat-pos.pos-right { grid-area: right; }
+.seat-pos.pos-bottom { grid-area: bottom; }
+.seat-pos.pos-mid { grid-area: mid; display: flex; align-items: center; justify-content: center; }
+.seat-pos-inner {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(201,162,39,0.5);
+  border-radius: 999px;
+  padding: 5px 14px 5px 5px;
+}
+.seat-pos-inner.turn { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,162,39,0.35); }
+.seat-pos-inner.me { background: rgba(201,162,39,0.22); }
+.seat-pos-name { font-weight: 700; font-size: 0.85rem; color: var(--cream) !important; }
+.seat-pos-meta { font-size: 0.68rem; color: var(--gold-light) !important; }
+
+/* ---- Bid grid panel (mirrors a floating "Your Bid" card) ---- */
+.bid-panel-header {
+  text-align: center; font-family: 'Fraunces', serif; font-size: 1.3rem;
+  color: var(--gold-light) !important; margin-bottom: 2px;
+}
+.bid-panel-sub { text-align: center; font-size: 0.85rem; color: var(--cream) !important; margin-bottom: 8px; }
+.stake-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 8px; }
+.stake-pill { font-size: 0.72rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.stake-pill.win { background: rgba(46,139,87,0.25); border: 1px solid #3f9d67; color: #bdeccf !important; }
+.stake-pill.lose { background: rgba(155,34,66,0.22); border: 1px solid var(--maroon); color: #f3c3d0 !important; }
+
 /* ---- Inputs ---- */
 .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
   border-radius: 10px !important;
@@ -273,21 +324,52 @@ def render_trick(trick, seat_labels):
     st.markdown(f'<div class="card-row">{"".join(slots)}</div>', unsafe_allow_html=True)
 
 
-def seat_strip(players, my_seat, current_turn, dealer, team_label_fn):
-    chips = []
-    for seat in range(4):
+def avatar_html(display_name, pic_uri=None, size=46):
+    if pic_uri:
+        return f'<img class="avatar" style="width:{size}px;height:{size}px" src="{pic_uri}">'
+    initial = (display_name or "?").strip()[:1].upper()
+    palette = ["#C9A227", "#0F5C46", "#9B2242", "#E7CB6B", "#10584A"]
+    color = palette[sum(ord(c) for c in display_name) % len(palette)] if display_name else palette[0]
+    return (f'<div class="avatar-fallback" style="width:{size}px;height:{size}px;'
+            f'background:{color}">{initial}</div>')
+
+
+def seat_ring(players, my_seat, current_turn, dealer, team_label_fn, profile_pics=None):
+    """Lay out all 4 seats around a table, with `my_seat` always shown at
+    the bottom (matching a typical card-table perspective) and the other
+    three rotating clockwise into right / top / left."""
+    profile_pics = profile_pics or {}
+    positions = {
+        "bottom": my_seat,
+        "right": (my_seat + 1) % 4,
+        "top": (my_seat + 2) % 4,
+        "left": (my_seat + 3) % 4,
+    }
+    cells = []
+    for pos, seat in positions.items():
         p = players.get(seat)
-        classes = "seat-chip"
+        name = p["display_name"] if p else "Empty"
+        pic = profile_pics.get(seat)
+        classes = "seat-pos-inner"
         if seat == current_turn:
             classes += " turn"
         if seat == my_seat:
             classes += " me"
-        name = p["display_name"] if p else "Empty seat"
         bot_tag = " 🤖" if (p and p.get("bot")) else ""
-        dealer_tag = " 🂠 dealer" if seat == dealer else ""
+        dealer_tag = " · dealer" if seat == dealer else ""
         meta = f"{team_label_fn(seat)}{dealer_tag}"
-        chips.append(
-            f'<div class="{classes}"><div class="seat-name">Seat {seat+1}{bot_tag}<br>{name}</div>'
-            f'<div class="seat-meta">{meta}</div></div>'
+        cells.append(
+            f'<div class="seat-pos pos-{pos}"><div class="{classes}">'
+            f'{avatar_html(name, pic)}'
+            f'<div><div class="seat-pos-name">{name}{bot_tag}</div>'
+            f'<div class="seat-pos-meta">{meta}</div></div></div></div>'
         )
-    st.markdown(f'<div class="seat-strip">{"".join(chips)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="seat-ring">{"".join(cells)}</div>', unsafe_allow_html=True)
+
+
+def stake_pills():
+    st.markdown(
+        '<div class="stake-row"><span class="stake-pill win">Win +1</span>'
+        '<span class="stake-pill lose">Lose −1</span></div>',
+        unsafe_allow_html=True,
+    )
