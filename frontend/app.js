@@ -52,9 +52,29 @@ function tabSwitch(container, tabName) {
 }
 
 // ---------------- Avatars ----------------
-function avatarHtml(name, picUri, sizeClass = "avatar-md") {
+// Bots don't have real photos, so they get a distinct colorful
+// gradient + emoji "avatar" instead of a plain letter — assigned by the
+// server per-bot (avatar_seed) so it stays consistent for that bot.
+const BOT_AVATAR_STYLES = [
+  { gradient: "linear-gradient(135deg,#FF9966,#FF5E62)", emoji: "🛺" },
+  { gradient: "linear-gradient(135deg,#36D1DC,#5B86E5)", emoji: "☔" },
+  { gradient: "linear-gradient(135deg,#F7971E,#FFD200)", emoji: "🍵" },
+  { gradient: "linear-gradient(135deg,#8E2DE2,#4A00E0)", emoji: "🥥" },
+  { gradient: "linear-gradient(135deg,#11998E,#38EF7D)", emoji: "🌴" },
+  { gradient: "linear-gradient(135deg,#FC5C7D,#6A82FB)", emoji: "🎭" },
+  { gradient: "linear-gradient(135deg,#F857A6,#FF5858)", emoji: "🎩" },
+  { gradient: "linear-gradient(135deg,#00C9FF,#92FE9D)", emoji: "🚌" },
+  { gradient: "linear-gradient(135deg,#DA22FF,#9733EE)", emoji: "🥁" },
+  { gradient: "linear-gradient(135deg,#FF512F,#F09819)", emoji: "🎣" },
+];
+
+function avatarHtml(name, picUri, sizeClass = "avatar-md", botSeed = null) {
   if (picUri) {
     return `<img class="avatar ${sizeClass}" src="${picUri}" alt="${escapeHtml(name)}">`;
+  }
+  if (botSeed !== null && botSeed !== undefined) {
+    const style = BOT_AVATAR_STYLES[botSeed % BOT_AVATAR_STYLES.length];
+    return `<div class="avatar-fallback ${sizeClass}" style="background:${style.gradient}">${style.emoji}</div>`;
   }
   const initial = (name || "?").trim().charAt(0).toUpperCase();
   const palette = ["#C9A227", "#0F5C46", "#9B2242", "#E7CB6B", "#10584A"];
@@ -279,8 +299,17 @@ function renderLeaderboard(rows) {
 }
 
 // ===========================================================
-// Play: join / create room
+// Play: game hub -> join / create room
 // ===========================================================
+document.getElementById("game-tile-28").addEventListener("click", () => {
+  document.getElementById("game-hub").classList.add("hidden");
+  document.getElementById("game-28-panel").classList.remove("hidden");
+});
+document.getElementById("back-to-hub-btn").addEventListener("click", () => {
+  document.getElementById("game-28-panel").classList.add("hidden");
+  document.getElementById("game-hub").classList.remove("hidden");
+});
+
 document.querySelectorAll("#panel-play .seg-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#panel-play .seg-btn").forEach(b => b.classList.remove("active"));
@@ -349,6 +378,8 @@ function leaveRoom() {
   document.getElementById("table-stage").classList.add("hidden");
   document.getElementById("round-over-panel").classList.add("hidden");
   document.getElementById("game-over-panel").classList.add("hidden");
+  document.getElementById("game-28-panel").classList.add("hidden");
+  document.getElementById("game-hub").classList.remove("hidden");
   showPanel("panel-play");
   document.querySelector('.nav-btn[data-view="play"]').classList.add("active");
 }
@@ -398,6 +429,23 @@ function render(state) {
   if (state.phase === "game_over") renderGameOver(state);
 }
 
+function lobbySeatCardHtml(seat, state) {
+  const p = state.players[String(seat)];
+  if (p) {
+    const mine = p.is_me ? '<span class="lobby-seat-you">YOU</span>' : "";
+    const bot = p.bot ? '<span class="lobby-seat-bot-tag">BOT</span>' : "";
+    return `<div class="lobby-seat-card filled">
+      ${avatarHtml(p.display_name, p.profile_pic, "avatar-lg", p.avatar_seed)}
+      <div class="lobby-seat-name">${escapeHtml(p.display_name)}</div>
+      <div class="lobby-seat-tags">${mine}${bot}</div>
+    </div>`;
+  }
+  return `<div class="lobby-seat-card empty" data-add-bot="${seat}">
+    <div class="lobby-seat-empty-icon">+</div>
+    <div class="lobby-seat-empty-label">Add bot</div>
+  </div>`;
+}
+
 function renderLobby(state) {
   const panel = document.getElementById("room-lobby");
   panel.classList.remove("hidden");
@@ -408,22 +456,10 @@ function renderLobby(state) {
     `Target ${state.target_score}`,
   ].map(b => `<span class="badge">${b}</span>`).join("");
 
-  const seatsHtml = [0, 1, 2, 3].map(seat => {
-    const p = state.players[String(seat)];
-    const team = (seat === 0 || seat === 2) ? "Team A" : "Team B";
-    if (p) {
-      const mine = p.is_me ? " ⭐" : "";
-      const bot = p.bot ? " 🤖" : "";
-      return `<div class="lobby-seat">${avatarHtml(p.display_name, p.profile_pic, "avatar-md")}
-        <div><b>Seat ${seat + 1}</b>${bot}${mine}</div>
-        <div>${escapeHtml(p.display_name)}</div><div>${team}</div></div>`;
-    }
-    return `<div class="lobby-seat"><div><b>Seat ${seat + 1}</b></div><div><i>empty</i></div>
-      <div>${team}</div><button class="btn btn-small" data-add-bot="${seat}">Add bot</button></div>`;
-  }).join("");
-  document.getElementById("lobby-seats").innerHTML = seatsHtml;
-  document.querySelectorAll("[data-add-bot]").forEach(btn => {
-    btn.addEventListener("click", () => sendAction({ action: "add_bot", seat: parseInt(btn.dataset.addBot, 10) }));
+  document.getElementById("lobby-team-a").innerHTML = [0, 2].map(s => lobbySeatCardHtml(s, state)).join("");
+  document.getElementById("lobby-team-b").innerHTML = [1, 3].map(s => lobbySeatCardHtml(s, state)).join("");
+  document.querySelectorAll("[data-add-bot]").forEach(el => {
+    el.addEventListener("click", () => sendAction({ action: "add_bot", seat: parseInt(el.dataset.addBot, 10) }));
   });
 
   const filled = Object.values(state.players).filter(Boolean).length;
@@ -469,7 +505,7 @@ function renderSeats(state) {
     }
     el.innerHTML = `
       <div class="${classes.join(" ")}">
-        ${avatarHtml(p.display_name, p.profile_pic, "avatar-md")}
+        ${avatarHtml(p.display_name, p.profile_pic, "avatar-md", p.avatar_seed)}
         <span class="seat-name">${escapeHtml(p.display_name)}${botTag}</span>
         ${dealerDot}
       </div>
@@ -616,7 +652,7 @@ function renderGameOver(state) {
   const boxes = [0, 1, 2, 3].map(seat => {
     const p = state.players[String(seat)];
     if (!p) return "";
-    return `<div class="stat-box">${avatarHtml(p.display_name, p.profile_pic, "avatar-sm")}<div>${escapeHtml(p.display_name)}</div></div>`;
+    return `<div class="stat-box">${avatarHtml(p.display_name, p.profile_pic, "avatar-sm", p.avatar_seed)}<div>${escapeHtml(p.display_name)}</div></div>`;
   }).join("");
   document.getElementById("game-over-stats").innerHTML = boxes;
 

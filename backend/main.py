@@ -31,6 +31,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 import auth
+import bots
 import config
 import game
 import sounds
@@ -129,6 +130,7 @@ def serialize_state(state, my_seat):
                 "display_name": p["display_name"],
                 "bot": bool(p.get("bot", False)),
                 "profile_pic": p.get("profile_pic"),
+                "avatar_seed": p.get("avatar_seed"),
                 "is_me": (s == my_seat),
             }
         else:
@@ -429,9 +431,11 @@ async def _handle_action_inner(code, username, msg):
         if action == "add_bot":
             seat = msg.get("seat")
             if state["phase"] == "lobby" and seat in range(4) and seat not in state["players"]:
+                existing_names = {p["display_name"] for p in state["players"].values() if p.get("bot")}
+                bot_name, avatar_seed = bots.random_bot(exclude_names=existing_names)
                 state["players"][seat] = {
-                    "username": f"__bot_{seat}__", "display_name": f"Bot {seat+1}",
-                    "profile_pic": None, "bot": True,
+                    "username": f"__bot_{seat}__", "display_name": bot_name,
+                    "profile_pic": None, "bot": True, "avatar_seed": avatar_seed,
                 }
 
         elif action == "start_game":

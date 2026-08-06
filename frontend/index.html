@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>28 — Irupathiyettu</title>
+<title>Game Vault</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -12,9 +12,9 @@
 <section id="view-auth" class="view">
   <div class="auth-shell">
     <div class="modern-card auth-card">
-      <div class="auth-logo">🃏</div>
-      <h1 class="auth-title">Sign in</h1>
-      <p class="auth-subtitle">to continue to <b>28 · Irupathiyettu</b></p>
+      <div class="auth-logo">🎮</div>
+      <h1 class="auth-title">Game Vault</h1>
+      <p class="auth-subtitle">Sign in to play</p>
 
       <div class="segmented-tabs" id="auth-tabs">
         <button class="seg-btn active" data-tab="login">Sign in</button>
@@ -50,21 +50,67 @@
 <!-- ===================== APP SHELL (nav + lobby/profile/leaderboard/game) ===================== -->
 <section id="view-app" class="view hidden">
   <nav class="topnav">
-    <div class="nav-left">
-      <img id="nav-avatar" class="avatar avatar-sm" alt="">
-      <span id="nav-name" class="nav-name"></span>
-    </div>
-    <div class="nav-tabs">
-      <button class="nav-btn active" data-view="play">Play</button>
-      <button class="nav-btn" data-view="profile">Profile</button>
-      <button class="nav-btn" data-view="leaderboard">Leaderboard</button>
-      <button class="nav-btn nav-logout" id="logout-btn">Log out</button>
+    <div class="nav-brand">🎮 <span>Game Vault</span></div>
+    <div class="nav-right">
+      <div class="nav-tabs">
+        <button class="nav-btn active" data-view="play">Games</button>
+        <button class="nav-btn" data-view="profile">Profile</button>
+        <button class="nav-btn" data-view="leaderboard">Leaderboard</button>
+        <button class="nav-btn nav-logout" id="logout-btn">Log out</button>
+      </div>
+      <div class="nav-user">
+        <img id="nav-avatar" class="avatar avatar-sm" alt="">
+        <span id="nav-name" class="nav-name"></span>
+      </div>
     </div>
   </nav>
 
-  <!-- ---- Play: join/create room ---- -->
+  <!-- ---- Play: game hub, then join/create room for the chosen game ---- -->
   <div id="panel-play" class="panel-view">
-    <div class="modern-card">
+
+    <!-- Game selection hub -->
+    <div id="game-hub" class="game-hub">
+      <div class="game-hub-header">
+        <h1>Choose a game</h1>
+        <p>More card games are coming to the Vault — for now, dive into 28.</p>
+      </div>
+      <div class="game-grid">
+        <button class="game-tile game-tile-active" id="game-tile-28">
+          <div class="game-tile-art">🃏</div>
+          <div class="game-tile-body">
+            <div class="game-tile-title">28</div>
+            <div class="game-tile-sub">Irupathiyettu</div>
+            <div class="game-tile-desc">Kerala's classic 4-player trick-taking card game.</div>
+          </div>
+          <div class="game-tile-play">Play ▶</div>
+        </button>
+        <div class="game-tile game-tile-soon">
+          <div class="game-tile-art">🀄</div>
+          <div class="game-tile-body">
+            <div class="game-tile-title">56</div>
+            <div class="game-tile-sub">Coming soon</div>
+          </div>
+        </div>
+        <div class="game-tile game-tile-soon">
+          <div class="game-tile-art">♣️</div>
+          <div class="game-tile-body">
+            <div class="game-tile-title">Rummy</div>
+            <div class="game-tile-sub">Coming soon</div>
+          </div>
+        </div>
+        <div class="game-tile game-tile-soon">
+          <div class="game-tile-art">🎴</div>
+          <div class="game-tile-body">
+            <div class="game-tile-title">Callbreak</div>
+            <div class="game-tile-sub">Coming soon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 28: join/create room -->
+    <div id="game-28-panel" class="modern-card hidden">
+      <button class="back-link" id="back-to-hub-btn">← All games</button>
       <div class="segmented-tabs" id="play-tabs">
         <button class="seg-btn active" data-tab="join">Join a room</button>
         <button class="seg-btn" data-tab="create">Create a room</button>
@@ -134,6 +180,13 @@
   <!-- ---- Leaderboard ---- -->
   <div id="panel-leaderboard" class="panel-view hidden">
     <div class="modern-card modern-card-wide">
+      <div class="lb-header">
+        <h2>28 · Leaderboard</h2>
+        <div class="segmented-tabs lb-scope-tabs">
+          <button class="seg-btn active">This game</button>
+          <button class="seg-btn" disabled title="Coming soon as more games launch">All games</button>
+        </div>
+      </div>
       <table class="lb-table" id="leaderboard-table">
         <thead><tr><th>#</th><th>Player</th><th>Games</th><th>Wins</th><th>Win rate</th><th>Streak</th></tr></thead>
         <tbody id="leaderboard-body"></tbody>
@@ -145,12 +198,29 @@
   <div id="panel-game" class="panel-view hidden">
 
     <!-- Lobby / waiting room -->
-    <div id="room-lobby" class="modern-card hidden">
-      <h3>Waiting room — room <span id="lobby-room-code"></span></h3>
-      <div class="badge-row" id="lobby-badges"></div>
-      <div id="lobby-seats" class="lobby-seats"></div>
-      <button id="start-game-btn" class="btn btn-primary hidden">🚀 Start game</button>
-      <p id="lobby-hint" class="form-hint"></p>
+    <div id="room-lobby" class="lobby-shell hidden">
+      <div class="lobby-topline">
+        <div class="lobby-code-block">
+          <div class="lobby-code-label">Room code</div>
+          <div class="lobby-code-value" id="lobby-room-code"></div>
+        </div>
+        <div class="badge-row" id="lobby-badges"></div>
+      </div>
+      <div class="lobby-teams">
+        <div class="lobby-team">
+          <div class="lobby-team-label">Team A</div>
+          <div class="lobby-team-seats" id="lobby-team-a"></div>
+        </div>
+        <div class="lobby-vs">VS</div>
+        <div class="lobby-team">
+          <div class="lobby-team-label">Team B</div>
+          <div class="lobby-team-seats" id="lobby-team-b"></div>
+        </div>
+      </div>
+      <div class="lobby-footer">
+        <button id="start-game-btn" class="btn btn-primary btn-large hidden">🚀 Start game</button>
+        <p id="lobby-hint" class="form-hint"></p>
+      </div>
     </div>
 
     <!-- Table stage -->

@@ -143,6 +143,120 @@ button, input, select { font-family: inherit; }
 .btn-primary { background: linear-gradient(180deg, var(--gold-light), var(--gold)); color: var(--teal-900); border-color: var(--teal-900); }
 .btn-small { padding: 7px 16px; font-size: 0.82rem; }
 .btn-block { width: 100%; }
+.btn-large { padding: 16px 40px; font-size: 1.1rem; }
+
+.back-link {
+  background: none; border: none; color: var(--ink-soft); font-weight: 600;
+  cursor: pointer; padding: 0; margin-bottom: 18px; font-size: 0.88rem;
+  transition: color 0.15s ease;
+}
+.back-link:hover { color: var(--teal-700); }
+
+/* ===========================================================
+   Game hub — game-launcher style selection grid
+   =========================================================== */
+.game-hub { flex: 1; padding: 56px 40px; max-width: 1100px; margin: 0 auto; width: 100%; }
+.game-hub-header { text-align: center; margin-bottom: 40px; }
+.game-hub-header h1 { font-size: 2.4rem; margin-bottom: 8px; }
+.game-hub-header p { color: var(--ink-soft); font-size: 1.05rem; }
+
+.game-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px;
+}
+.game-tile {
+  position: relative; border-radius: 20px; padding: 0; overflow: hidden;
+  border: none; text-align: left; cursor: default; font-family: inherit;
+  background: var(--surface); box-shadow: var(--shadow-card);
+  transition: transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s ease;
+  min-height: 260px; display: flex; flex-direction: column;
+}
+.game-tile-active { cursor: pointer; }
+.game-tile-active:hover { transform: translateY(-6px); box-shadow: var(--shadow-card-hover); }
+.game-tile-art {
+  font-size: 4rem; display: flex; align-items: center; justify-content: center;
+  height: 130px; background: radial-gradient(ellipse at top, var(--teal-700), var(--teal-900));
+}
+.game-tile-body { padding: 18px 20px; flex: 1; }
+.game-tile-title { font-family: 'Fraunces', serif; font-size: 1.5rem; font-weight: 700; color: var(--ink); }
+.game-tile-sub { font-size: 0.85rem; color: var(--gold); font-weight: 600; margin-bottom: 8px; }
+.game-tile-desc { font-size: 0.85rem; color: var(--ink-soft); line-height: 1.4; }
+.game-tile-play {
+  margin: 0 20px 18px 20px; text-align: center; padding: 10px; border-radius: 999px;
+  background: linear-gradient(180deg, var(--gold-light), var(--gold)); color: var(--teal-900);
+  font-weight: 700; font-size: 0.9rem;
+}
+.game-tile-soon { opacity: 0.55; cursor: not-allowed; }
+.game-tile-soon .game-tile-art { background: linear-gradient(160deg, #ddd, #ccc); filter: grayscale(0.4); }
+.game-tile-soon .game-tile-sub { color: var(--ink-soft); }
+
+/* ---- Leaderboard header ---- */
+.lb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+.lb-header h2 { margin: 0; }
+.lb-scope-tabs { max-width: 280px; margin: 0; }
+.lb-scope-tabs .seg-btn { white-space: nowrap; padding: 10px 16px; }
+.lb-scope-tabs .seg-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* ===========================================================
+   Lobby — bigger, team-based, game-launcher energy
+   =========================================================== */
+.lobby-shell {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  padding: 48px 30px; max-width: 980px; margin: 0 auto; width: 100%;
+  animation: cardRise 0.35s cubic-bezier(0.16,1,0.3,1);
+}
+.lobby-topline { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 40px; }
+.lobby-code-block { text-align: center; }
+.lobby-code-label { font-size: 0.78rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.lobby-code-value {
+  font-family: 'Fraunces', serif; font-size: 2.6rem; font-weight: 700; color: var(--teal-900);
+  letter-spacing: 0.08em;
+}
+
+.lobby-teams { display: flex; align-items: center; gap: 32px; width: 100%; justify-content: center; }
+.lobby-team { flex: 1; max-width: 380px; }
+.lobby-team-label {
+  text-align: center; font-weight: 700; font-size: 1.1rem; color: var(--teal-900);
+  margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.lobby-team-seats { display: flex; flex-direction: column; gap: 14px; }
+.lobby-vs {
+  font-family: 'Fraunces', serif; font-size: 1.6rem; font-weight: 700; color: var(--gold);
+  flex-shrink: 0;
+}
+
+.lobby-seat-card {
+  background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-card);
+  padding: 18px 20px; display: flex; align-items: center; gap: 16px;
+  min-height: 90px; transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
+}
+.lobby-seat-card.filled { border: 1.5px solid var(--border-soft); }
+.lobby-seat-name { font-weight: 700; font-size: 1.05rem; color: var(--ink); }
+.lobby-seat-tags { display: flex; gap: 6px; margin-top: 4px; }
+.lobby-seat-you, .lobby-seat-bot-tag {
+  font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.04em;
+}
+.lobby-seat-you { background: rgba(201,162,39,0.2); color: var(--gold); }
+.lobby-seat-bot-tag { background: rgba(16,88,74,0.12); color: var(--teal-700); }
+
+.lobby-seat-card.empty {
+  border: 2px dashed var(--border-soft); justify-content: center; cursor: pointer;
+  color: var(--ink-soft);
+}
+.lobby-seat-card.empty:hover { border-color: var(--gold); background: rgba(201,162,39,0.05); transform: translateY(-2px); }
+.lobby-seat-empty-icon {
+  width: 40px; height: 40px; border-radius: 50%; border: 2px dashed var(--border-soft);
+  display: flex; align-items: center; justify-content: center; font-size: 1.3rem; margin-right: 6px;
+}
+.lobby-seat-empty-label { font-weight: 600; font-size: 0.9rem; }
+
+.lobby-footer { margin-top: 40px; text-align: center; }
+
+@media (max-width: 720px) {
+  .lobby-teams { flex-direction: column; }
+  .lobby-vs { padding: 8px 0; }
+  .game-hub { padding: 32px 18px; }
+  .game-hub-header h1 { font-size: 1.9rem; }
+}
 
 .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px 0; }
 .badge {
@@ -153,8 +267,14 @@ button, input, select { font-family: inherit; }
 
 .topnav {
   display: flex; justify-content: space-between; align-items: center;
-  background: var(--teal-900); padding: 12px 24px; flex-shrink: 0;
+  background: var(--teal-900); padding: 14px 28px; flex-shrink: 0;
 }
+.nav-brand {
+  display: flex; align-items: center; gap: 8px; font-family: 'Fraunces', serif;
+  font-weight: 700; font-size: 1.25rem; color: var(--gold-light);
+}
+.nav-right { display: flex; align-items: center; gap: 20px; }
+.nav-user { display: flex; align-items: center; gap: 10px; }
 .nav-left { display: flex; align-items: center; gap: 10px; }
 .nav-name { color: var(--cream); font-weight: 600; }
 .nav-tabs { display: flex; gap: 6px; }
