@@ -11,33 +11,39 @@
 <!-- ===================== AUTH VIEW ===================== -->
 <section id="view-auth" class="view">
   <div class="auth-shell">
-    <h1 class="brand-title">🃏 28 <span class="brand-sub">Irupathiyettu</span></h1>
-    <div class="kasavu-rule"></div>
+    <div class="modern-card auth-card">
+      <div class="auth-logo">🃏</div>
+      <h1 class="auth-title">Sign in</h1>
+      <p class="auth-subtitle">to continue to <b>28 · Irupathiyettu</b></p>
 
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="login">Log in</button>
-      <button class="tab-btn" data-tab="register">Register</button>
+      <div class="segmented-tabs" id="auth-tabs">
+        <button class="seg-btn active" data-tab="login">Sign in</button>
+        <button class="seg-btn" data-tab="register">Create account</button>
+      </div>
+
+      <form id="login-form" class="clean-form">
+        <div class="field"><label>Username</label><input type="text" name="username" required autocomplete="username"></div>
+        <div class="field"><label>Password</label><input type="password" name="password" required autocomplete="current-password"></div>
+        <p class="form-error" id="login-error"></p>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+
+      <form id="register-form" class="clean-form hidden">
+        <p class="form-hint">Registration requires an invite code — ask whoever's hosting this game.</p>
+        <div class="field"><label>Username</label><input type="text" name="username" required></div>
+        <div class="field"><label>Display name (optional)</label><input type="text" name="display_name"></div>
+        <div class="field"><label>Password</label><input type="password" name="password" required></div>
+        <div class="field"><label>Confirm password</label><input type="password" name="confirm_password" required></div>
+        <div class="field"><label>Invite code</label><input type="text" name="invite_code" required></div>
+        <div class="field file-field">
+          <label>Profile picture (optional)</label>
+          <input type="file" name="profile_pic" accept="image/png,image/jpeg">
+        </div>
+        <p class="form-error" id="register-error"></p>
+        <p class="form-success" id="register-success"></p>
+        <button type="submit" class="btn btn-primary btn-block">Create account</button>
+      </form>
     </div>
-
-    <form id="login-form" class="auth-form">
-      <label>Username <input type="text" name="username" required autocomplete="username"></label>
-      <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-      <p class="form-error" id="login-error"></p>
-      <button type="submit" class="btn btn-primary">Log in</button>
-    </form>
-
-    <form id="register-form" class="auth-form hidden">
-      <p class="form-hint">Registration requires an invite code — ask whoever's hosting this game.</p>
-      <label>Username <input type="text" name="username" required></label>
-      <label>Display name (optional) <input type="text" name="display_name"></label>
-      <label>Password <input type="password" name="password" required></label>
-      <label>Confirm password <input type="password" name="confirm_password" required></label>
-      <label>Invite code <input type="text" name="invite_code" required></label>
-      <label>Profile picture (optional) <input type="file" name="profile_pic" accept="image/png,image/jpeg"></label>
-      <p class="form-error" id="register-error"></p>
-      <p class="form-success" id="register-success"></p>
-      <button type="submit" class="btn btn-primary">Create account</button>
-    </form>
   </div>
 </section>
 
@@ -58,55 +64,76 @@
 
   <!-- ---- Play: join/create room ---- -->
   <div id="panel-play" class="panel-view">
-    <div class="cream-panel">
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="join">Join a room</button>
-        <button class="tab-btn" data-tab="create">Create a room</button>
+    <div class="modern-card">
+      <div class="segmented-tabs" id="play-tabs">
+        <button class="seg-btn active" data-tab="join">Join a room</button>
+        <button class="seg-btn" data-tab="create">Create a room</button>
       </div>
-      <form id="join-form" class="auth-form">
-        <label>Room code <input type="text" name="code" maxlength="5" style="text-transform:uppercase"></label>
+      <form id="join-form" class="clean-form">
+        <div class="field"><label>Room code</label><input type="text" name="code" maxlength="5" style="text-transform:uppercase"></div>
         <p class="form-error" id="join-error"></p>
-        <button type="submit" class="btn btn-primary">Join</button>
+        <button type="submit" class="btn btn-primary btn-block">Join</button>
       </form>
-      <form id="create-form" class="auth-form hidden">
-        <label>Mode
-          <select name="game_mode">
-            <option value="classic">Classic</option>
-            <option value="royal_pair">Royal Pair</option>
-          </select>
-        </label>
-        <label>Deal type
-          <select name="deal_type">
-            <option value="half">Half Deal (traditional)</option>
-            <option value="full">Full Deal</option>
-          </select>
-        </label>
-        <label>Match points to win <input type="number" name="target_score" value="6" min="1" max="20"></label>
+      <form id="create-form" class="clean-form hidden">
+        <label class="field-label">Mode</label>
+        <div class="mode-grid" data-field="game_mode">
+          <button type="button" class="mode-card active" data-value="classic">
+            <div class="mode-card-icon">♠</div>
+            <div class="mode-card-title">Classic</div>
+            <div class="mode-card-desc">Standard 28 rules</div>
+          </button>
+          <button type="button" class="mode-card" data-value="royal_pair">
+            <div class="mode-card-icon">♛</div>
+            <div class="mode-card-title">Royal Pair</div>
+            <div class="mode-card-desc">+4 bonus for K+Q of trump</div>
+          </button>
+        </div>
+        <input type="hidden" name="game_mode" value="classic">
+
+        <label class="field-label">Deal type</label>
+        <div class="mode-grid" data-field="deal_type">
+          <button type="button" class="mode-card active" data-value="half">
+            <div class="mode-card-icon">✋</div>
+            <div class="mode-card-title">Half Deal</div>
+            <div class="mode-card-desc">Traditional — 4, bid, then 4</div>
+          </button>
+          <button type="button" class="mode-card" data-value="full">
+            <div class="mode-card-icon">🀰</div>
+            <div class="mode-card-title">Full Deal</div>
+            <div class="mode-card-desc">All 8 cards upfront</div>
+          </button>
+        </div>
+        <input type="hidden" name="deal_type" value="half">
+
+        <div class="field"><label>Match points to win</label><input type="number" name="target_score" value="6" min="1" max="20"></div>
         <p class="form-error" id="create-error"></p>
-        <button type="submit" class="btn btn-primary">Create room</button>
+        <button type="submit" class="btn btn-primary btn-block">Create room</button>
       </form>
     </div>
   </div>
 
   <!-- ---- Profile ---- -->
   <div id="panel-profile" class="panel-view hidden">
-    <div class="cream-panel">
-      <img id="profile-avatar" class="avatar avatar-lg" alt="">
-      <form id="profile-name-form" class="inline-form">
-        <input type="text" name="display_name" id="profile-name-input">
-        <button type="submit" class="btn btn-small">Save name</button>
-      </form>
-      <form id="profile-pic-form" class="inline-form">
-        <input type="file" name="profile_pic" accept="image/png,image/jpeg">
-        <button type="submit" class="btn btn-small">Save picture</button>
-      </form>
+    <div class="modern-card">
+      <div class="profile-header">
+        <div class="avatar-upload-wrap">
+          <img id="profile-avatar" class="avatar avatar-xl" alt="">
+          <button type="button" class="avatar-edit-btn" id="avatar-edit-trigger" title="Change picture">✎</button>
+          <input type="file" id="profile-pic-input" accept="image/png,image/jpeg" class="hidden">
+        </div>
+        <div class="profile-name-row">
+          <input type="text" id="profile-name-input" class="profile-name-field">
+          <button type="button" id="profile-name-save" class="btn btn-small btn-primary">Save</button>
+        </div>
+        <p class="form-hint" id="profile-pic-hint"></p>
+      </div>
       <div class="stats-grid" id="profile-stats"></div>
     </div>
   </div>
 
   <!-- ---- Leaderboard ---- -->
   <div id="panel-leaderboard" class="panel-view hidden">
-    <div class="cream-panel">
+    <div class="modern-card modern-card-wide">
       <table class="lb-table" id="leaderboard-table">
         <thead><tr><th>#</th><th>Player</th><th>Games</th><th>Wins</th><th>Win rate</th><th>Streak</th></tr></thead>
         <tbody id="leaderboard-body"></tbody>
@@ -118,7 +145,7 @@
   <div id="panel-game" class="panel-view hidden">
 
     <!-- Lobby / waiting room -->
-    <div id="room-lobby" class="cream-panel hidden">
+    <div id="room-lobby" class="modern-card hidden">
       <h3>Waiting room — room <span id="lobby-room-code"></span></h3>
       <div class="badge-row" id="lobby-badges"></div>
       <div id="lobby-seats" class="lobby-seats"></div>
@@ -170,14 +197,14 @@
     </div>
 
     <!-- Round over / Game over overlays -->
-    <div id="round-over-panel" class="cream-panel hidden">
+    <div id="round-over-panel" class="modern-card hidden">
       <h3>Round over</h3>
       <p id="round-summary-text"></p>
       <button id="next-round-btn" class="btn btn-primary hidden">Deal next round ▶️</button>
       <p id="round-over-hint" class="form-hint"></p>
     </div>
 
-    <div id="game-over-panel" class="cream-panel hidden">
+    <div id="game-over-panel" class="modern-card hidden">
       <h3>🏁 Game over!</h3>
       <p id="game-over-text"></p>
       <div id="game-over-stats" class="stats-grid"></div>

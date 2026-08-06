@@ -48,8 +48,7 @@ function showPanel(id) {
 }
 
 function tabSwitch(container, tabName) {
-  container.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabName));
-  container.querySelectorAll("form, .auth-form").forEach(f => {});
+  container.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabName));
 }
 
 // ---------------- Avatars ----------------
@@ -72,6 +71,18 @@ function escapeHtml(s) {
 }
 
 // ---------------- Cards ----------------
+// Pip layout tables (percent positions within the card face). This gives
+// real playing-card faces — e.g. seven pips arranged like an actual 7 —
+// rather than a single rank+suit glyph.
+const PIP_LAYOUTS = {
+  "A": [[50, 50, false]],
+  "7": [[20, 22, false], [20, 78, false], [35, 50, false], [50, 22, false], [50, 78, false], [80, 22, true], [80, 78, true]],
+  "8": [[20, 22, false], [20, 78, false], [35, 50, false], [50, 22, false], [50, 78, false], [65, 50, true], [80, 22, true], [80, 78, true]],
+  "9": [[18, 22, false], [18, 78, false], [35, 22, false], [35, 78, false], [50, 50, false], [65, 22, true], [65, 78, true], [82, 22, true], [82, 78, true]],
+  "10": [[14, 22, false], [14, 78, false], [30, 22, false], [30, 78, false], [42, 50, false], [58, 50, true], [70, 22, true], [70, 78, true], [86, 22, true], [86, 78, true]],
+};
+const FACE_RANKS = new Set(["J", "Q", "K"]);
+
 function cardHtml(card, { dim = false, big = false, playable = false } = {}) {
   const rank = card.slice(0, -1);
   const suit = card.slice(-1);
@@ -80,9 +91,28 @@ function cardHtml(card, { dim = false, big = false, playable = false } = {}) {
   if (dim) classes.push("dim");
   if (big) classes.push("big");
   if (playable) classes.push("playable");
+
+  let middle;
+  if (FACE_RANKS.has(rank)) {
+    middle = `<div class="pcard-face">
+      <div class="pcard-face-letter">${rank}</div>
+      <div class="pcard-face-suit">${suit}</div>
+    </div>`;
+  } else {
+    const layout = PIP_LAYOUTS[rank] || [];
+    const isAce = rank === "A";
+    const pips = layout.map(([top, left, flip]) => {
+      const cls = ["pcard-pip"];
+      if (flip) cls.push("flip");
+      if (isAce) cls.push("ace");
+      return `<span class="${cls.join(" ")}" style="top:${top}%;left:${left}%">${suit}</span>`;
+    }).join("");
+    middle = `<div class="pcard-pips">${pips}</div>`;
+  }
+
   return `<div class="${classes.join(" ")}" data-card="${escapeHtml(card)}">
     <div class="pcard-corner pcard-corner-tl"><span>${rank}</span><span class="pcard-suit-mini">${suit}</span></div>
-    <div class="pcard-suit-center">${suit}</div>
+    ${middle}
     <div class="pcard-corner pcard-corner-br"><span>${rank}</span><span class="pcard-suit-mini">${suit}</span></div>
   </div>`;
 }
@@ -100,9 +130,9 @@ function playSound(name) {
 // ===========================================================
 // Auth
 // ===========================================================
-document.querySelectorAll("#view-auth .tab-btn").forEach(btn => {
+document.querySelectorAll("#view-auth .seg-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll("#view-auth .tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("#view-auth .seg-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("login-form").classList.toggle("hidden", btn.dataset.tab !== "login");
     document.getElementById("register-form").classList.toggle("hidden", btn.dataset.tab !== "register");
@@ -184,7 +214,7 @@ document.querySelectorAll(".nav-btn[data-view]").forEach(btn => {
 // Profile
 // ===========================================================
 function renderProfile(stats) {
-  document.getElementById("profile-avatar").outerHTML = avatarHtml(ME.display_name, ME.profile_pic, "avatar-lg").replace("<div", '<div id="profile-avatar"').replace("<img", '<img id="profile-avatar"');
+  document.getElementById("profile-avatar").outerHTML = avatarHtml(ME.display_name, ME.profile_pic, "avatar-xl").replace("<div", '<div id="profile-avatar"').replace("<img", '<img id="profile-avatar"');
   document.getElementById("profile-name-input").value = ME.display_name;
   const winRate = stats.games_played ? Math.round(100 * stats.games_won / stats.games_played) : 0;
   const bidRate = stats.bids_made ? Math.round(100 * stats.bids_won / stats.bids_made) : 0;
@@ -200,8 +230,7 @@ function renderProfile(stats) {
   ).join("");
 }
 
-document.getElementById("profile-name-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
+document.getElementById("profile-name-save").addEventListener("click", async () => {
   const name = document.getElementById("profile-name-input").value;
   const form = new FormData();
   form.append("display_name", name);
@@ -210,13 +239,27 @@ document.getElementById("profile-name-form").addEventListener("submit", async (e
   document.getElementById("nav-name").textContent = name;
 });
 
-document.getElementById("profile-pic-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const form = new FormData(e.target);
-  await api("/api/profile/picture", { method: "POST", body: form });
-  const data = await api("/api/me");
-  ME = data.user;
-  renderProfile(data.stats);
+document.getElementById("avatar-edit-trigger").addEventListener("click", () => {
+  document.getElementById("profile-pic-input").click();
+});
+
+document.getElementById("profile-pic-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("profile_pic", file);
+  const hint = document.getElementById("profile-pic-hint");
+  hint.textContent = "Uploading…";
+  try {
+    await api("/api/profile/picture", { method: "POST", body: form });
+    const data = await api("/api/me");
+    ME = data.user;
+    renderProfile(data.stats);
+    hint.textContent = "Updated!";
+    setTimeout(() => { hint.textContent = ""; }, 2000);
+  } catch (err) {
+    hint.textContent = err.message;
+  }
 });
 
 // ===========================================================
@@ -238,12 +281,24 @@ function renderLeaderboard(rows) {
 // ===========================================================
 // Play: join / create room
 // ===========================================================
-document.querySelectorAll("#panel-play .tab-btn").forEach(btn => {
+document.querySelectorAll("#panel-play .seg-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll("#panel-play .tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("#panel-play .seg-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("join-form").classList.toggle("hidden", btn.dataset.tab !== "join");
     document.getElementById("create-form").classList.toggle("hidden", btn.dataset.tab !== "create");
+  });
+});
+
+// ---------------- Mode selection cards (game mode / deal type) ----------------
+document.querySelectorAll(".mode-grid").forEach(grid => {
+  const hiddenInput = grid.parentElement.querySelector(`input[name="${grid.dataset.field}"]`);
+  grid.querySelectorAll(".mode-card").forEach(card => {
+    card.addEventListener("click", () => {
+      grid.querySelectorAll(".mode-card").forEach(c => c.classList.remove("active"));
+      card.classList.add("active");
+      if (hiddenInput) hiddenInput.value = card.dataset.value;
+    });
   });
 });
 
