@@ -33,6 +33,7 @@ import streamlit as st
 
 import auth
 import sounds
+import ui
 
 try:
     from streamlit_autorefresh import st_autorefresh
@@ -385,6 +386,7 @@ def run_bots(state):
 # Streamlit UI
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title="28 — Kerala Card Game", page_icon="🃏", layout="centered")
+ui.inject()
 
 for key, default in [("username", None), ("room_code", None), ("nav", "Play"),
                       ("last_seen_seq", 0), ("pending_bid", {})]:
@@ -395,9 +397,11 @@ rooms = get_rooms()
 
 st.title("🃏 28 — Irupathiyettu")
 st.caption("The classic Kerala trick-taking card game, played online.")
+ui.kasavu_rule()
 
 # --- Login / register --------------------------------------------------------
 if not st.session_state.username:
+    st.markdown('<div class="cream-panel">', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["Log in", "Register"])
     with tab1:
         u = st.text_input("Username", key="login_u")
@@ -418,6 +422,7 @@ if not st.session_state.username:
                 st.success(msg + " You can log in now.")
             else:
                 st.error(msg)
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 username = st.session_state.username
@@ -438,6 +443,8 @@ with st.sidebar:
 # --- Profile page --------------------------------------------------------
 if st.session_state.nav == "Profile":
     st.header("Your profile")
+    ui.kasavu_rule()
+    st.markdown('<div class="cream-panel">', unsafe_allow_html=True)
     new_name = st.text_input("Display name", value=display_name)
     if st.button("Save name"):
         auth.set_display_name(username, new_name)
@@ -458,11 +465,14 @@ if st.session_state.nav == "Profile":
     bid_rate = (s["bids_won"] / s["bids_made"] * 100) if s["bids_made"] else 0
     c8.metric("Bid success rate", f"{bid_rate:.0f}% ({s['bids_won']}/{s['bids_made']})")
     st.caption(f"Total playtime: {s['total_playtime_seconds']/60:.1f} minutes")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Leaderboard page ------------------------------------------------------
 if st.session_state.nav == "Leaderboard":
     st.header("🏆 Leaderboard")
+    ui.kasavu_rule()
+    st.markdown('<div class="cream-panel">', unsafe_allow_html=True)
     rows = auth.get_leaderboard()
     if not rows:
         st.info("No completed games yet — be the first!")
@@ -472,10 +482,12 @@ if st.session_state.nav == "Leaderboard":
              "Win rate": f"{r[4]*100:.0f}%", "Best streak": r[5]}
             for i, r in enumerate(rows)
         ])
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Play: join / create room -------------------------------------------------
 if st.session_state.room_code is None:
+    st.markdown('<div class="cream-panel">', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["Join a room", "Create a room"])
     with tab1:
         code = st.text_input("Room code", max_chars=5).upper().strip()
@@ -517,6 +529,7 @@ if st.session_state.room_code is None:
                 rooms[code] = state
                 st.session_state.room_code = code
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- In a room ---------------------------------------------------------------
@@ -537,8 +550,12 @@ else:
 
 my_seat = next((s for s, p in state["players"].items() if p.get("username") == username), None)
 
-st.markdown(f"**Room code:** `{code}`  ·  mode: **{state['game_mode'].replace('_',' ').title()}**  ·  "
-            f"deal: **{state['deal_type'].title()}**  ·  target: **{state['target_score']}**")
+st.subheader(f"Room `{code}`")
+ui.badges(
+    state["game_mode"].replace("_", " ").title(),
+    f"{state['deal_type'].title()} Deal",
+    f"Target {state['target_score']}",
+)
 
 with _lock:
     run_bots(state)
@@ -551,7 +568,8 @@ if state["events"] and state["events"][-1]["seq"] > st.session_state.last_seen_s
 
 # --- Lobby ---------------------------------------------------------------
 if state["phase"] == "lobby":
-    st.subheader("Waiting room")
+    st.markdown('<div class="cream-panel">', unsafe_allow_html=True)
+    st.markdown("#### Waiting room")
     cols = st.columns(4)
     for seat in range(4):
         with cols[seat]:
@@ -559,10 +577,11 @@ if state["phase"] == "lobby":
             team = "Team A" if seat in (0, 2) else "Team B"
             if p:
                 tag = " 🤖" if p["bot"] else ""
-                st.markdown(f"**Seat {seat+1}**{tag}\n\n{p['display_name']}\n\n*{team}*")
+                marker = " ⭐" if p.get("username") == username else ""
+                st.markdown(f"**Seat {seat+1}**{tag}{marker}\n\n{p['display_name']}\n\n*{team}*")
             else:
                 st.markdown(f"**Seat {seat+1}**\n\n_empty_\n\n*{team}*")
-                if st.button(f"Add bot to seat {seat+1}", key=f"bot_{seat}"):
+                if st.button(f"Add bot", key=f"bot_{seat}"):
                     with _lock:
                         state["players"][seat] = {"username": f"__bot_{seat}__", "display_name": f"Bot {seat+1}", "bot": True}
                     st.rerun()
@@ -575,6 +594,7 @@ if state["phase"] == "lobby":
             st.rerun()
     else:
         st.info("Need 4 seats filled (players or bots) to start.")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 if my_seat is None:
@@ -582,7 +602,8 @@ if my_seat is None:
     st.stop()
 
 my_team = team_of(my_seat)
-st.markdown(f"You are **seat {my_seat+1}** ({display_name}) — **{TEAM_LABEL[my_team]}**")
+ui.seat_strip(state["players"], my_seat, state["turn"], state["dealer"],
+              lambda s: TEAM_LABEL[team_of(s)])
 
 score_cols = st.columns(2)
 score_cols[0].metric("Team A match points", state["match_score"][0])
@@ -594,11 +615,12 @@ with st.expander("Recent activity", expanded=False):
 
 # --- Bidding ---------------------------------------------------------------
 if state["phase"] == "bidding":
-    st.subheader("Bidding")
-    st.write(f"Current bid: **{state['bid_value'] if state['bid_seat'] is not None else '—'}**"
-             + (f" by seat {state['bid_seat']+1}" if state["bid_seat"] is not None else ""))
-    st.write("Your hand:")
-    st.write("  ".join(state["hands"][my_seat]))
+    st.markdown('<div class="table-panel">', unsafe_allow_html=True)
+    st.markdown("#### Bidding")
+    st.markdown(f"Current bid: **{state['bid_value'] if state['bid_seat'] is not None else '—'}**"
+                + (f" by seat {state['bid_seat']+1}" if state["bid_seat"] is not None else ""))
+    st.markdown("**Your hand**")
+    ui.render_card_row(state["hands"][my_seat])
 
     if state["turn"] == my_seat and my_seat in state["active_bidders"]:
         min_next = max(state["bid_value"] + 1, MIN_BID)
@@ -639,15 +661,17 @@ if state["phase"] == "bidding":
                 st.rerun()
     else:
         st.info("Waiting for other players to bid...")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Choose trump ------------------------------------------------------------
 if state["phase"] == "choose_trump":
-    st.subheader("Trump selection")
-    st.write(f"Seat {state['bid_seat']+1} won the bid at **{state['bid_value']}** and is choosing trump.")
+    st.markdown('<div class="table-panel">', unsafe_allow_html=True)
+    st.markdown("#### Trump selection")
+    st.markdown(f"Seat {state['bid_seat']+1} won the bid at **{state['bid_value']}** and is choosing trump.")
     if state["bid_seat"] == my_seat:
-        st.write("Your hand:")
-        st.write("  ".join(state["hands"][my_seat]))
+        st.markdown("**Your hand**")
+        ui.render_card_row(state["hands"][my_seat])
         suit = st.selectbox("Choose trump suit", SUITS)
         if st.button("Confirm trump", type="primary"):
             with _lock:
@@ -656,43 +680,50 @@ if state["phase"] == "choose_trump":
             st.rerun()
     else:
         st.info("Waiting for the bidder to choose trump...")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Playing -----------------------------------------------------------------
 if state["phase"] == "playing":
-    st.subheader(f"Playing — trump is {state['trump_suit']}  ·  bid {state['bid_value']} by seat {state['bid_seat']+1}")
+    st.markdown('<div class="table-panel">', unsafe_allow_html=True)
+    st.markdown("#### Playing")
+    ui.badges(f"Trump {state['trump_suit']}", f"Bid {state['bid_value']} · seat {state['bid_seat']+1}",
+              f"Trick {state['tricks_played']+1}/8")
     pts = state["round_points"]
-    st.write(f"Tricks played: {state['tricks_played']}/8   ·   "
-             f"Team A points: {pts[0]}   ·   Team B points: {pts[1]}")
+    tc1, tc2 = st.columns(2)
+    tc1.metric("Team A points", pts[0])
+    tc2.metric("Team B points", pts[1])
 
-    st.write("**Current trick:**")
+    st.markdown("**Current trick**")
     if state["current_trick"]:
-        st.write("   ".join(f"seat {s+1}: {c}" for s, c in state["current_trick"]))
+        seat_labels = {s: state["players"][s]["display_name"] for s in state["players"]}
+        ui.render_trick(state["current_trick"], seat_labels)
     else:
-        st.write("_(none yet)_")
+        st.caption("No cards played yet this trick.")
 
-    st.write("**Your hand:**")
+    st.markdown("**Your hand**")
     led_suit = card_suit(state["current_trick"][0][1]) if state["current_trick"] else None
     moves = legal_moves(state["hands"][my_seat], led_suit) if state["turn"] == my_seat else []
-    cols = st.columns(len(state["hands"][my_seat]) or 1)
-    for i, c in enumerate(state["hands"][my_seat]):
-        playable = c in moves
+    hand = state["hands"][my_seat]
+    cols = st.columns(len(hand) or 1)
+    for i, c in enumerate(hand):
+        playable = state["turn"] == my_seat and c in moves
         with cols[i]:
-            if state["turn"] == my_seat and playable:
-                if st.button(c, key=f"card_{c}_{i}"):
-                    with _lock:
-                        play_card(state, my_seat, c)
-                        run_bots(state)
-                    st.rerun()
-            else:
-                st.write(c)
+            st.markdown(ui.card_html(c, dim=not playable), unsafe_allow_html=True)
+            if st.button("Play", key=f"card_{c}_{i}", disabled=not playable):
+                with _lock:
+                    play_card(state, my_seat, c)
+                    run_bots(state)
+                st.rerun()
     if state["turn"] != my_seat:
         st.info(f"Waiting for seat {state['turn']+1} to play...")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Round over ----------------------------------------------------------
 if state["phase"] == "round_over":
-    st.subheader("Round over")
+    st.markdown('<div class="table-panel">', unsafe_allow_html=True)
+    st.markdown("#### Round over")
     st.success(state["round_summary"])
     if my_seat == 0 or state["players"][0]["bot"]:
         if st.button("Deal next round ▶️", type="primary"):
@@ -703,27 +734,29 @@ if state["phase"] == "round_over":
             st.rerun()
     else:
         st.info("Waiting for seat 1 to start the next round...")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 # --- Game over -------------------------------------------------------------
 if state["phase"] == "game_over":
     summary = state["game_over_summary"]
-    st.subheader("🏁 Game over!")
+    st.markdown('<div class="table-panel">', unsafe_allow_html=True)
+    st.markdown("#### 🏁 Game over!")
     st.success(f"{summary['winner']} wins by {summary['margin']} match point(s)! "
                f"Final score: Team A {summary['score_a']} — Team B {summary['score_b']}")
-    st.write(f"Game duration: **{summary['duration']/60:.1f} minutes**")
+    st.markdown(f"Game duration: **{summary['duration']/60:.1f} minutes**")
 
-    st.write("### Updated stats")
+    st.markdown("**Updated stats**")
     cols = st.columns(4)
     for i, seat in enumerate(range(4)):
         p = state["players"][seat]
         with cols[i]:
             if p.get("bot"):
-                st.write(f"**{p['display_name']}** (bot)")
+                st.markdown(f"**{p['display_name']}** (bot)")
                 continue
             s = auth.get_stats(p["username"])
             wr = (s["games_won"] / s["games_played"] * 100) if s["games_played"] else 0
-            st.write(f"**{p['display_name']}**")
+            st.markdown(f"**{p['display_name']}**")
             st.caption(f"{s['games_won']}/{s['games_played']} wins ({wr:.0f}%) · streak {s['current_streak']}")
 
     if my_seat == 0 or state["players"][0]["bot"]:
@@ -738,4 +771,5 @@ if state["phase"] == "game_over":
     if st.button("Leave room"):
         st.session_state.room_code = None
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
