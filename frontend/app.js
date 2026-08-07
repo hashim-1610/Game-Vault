@@ -91,50 +91,34 @@ function escapeHtml(s) {
 }
 
 // ---------------- Cards ----------------
-// Pip layout tables (percent positions within the card face). This gives
-// real playing-card faces — e.g. seven pips arranged like an actual 7 —
-// rather than a single rank+suit glyph.
-const PIP_LAYOUTS = {
-  "A": [[50, 50, false]],
-  "7": [[20, 22, false], [20, 78, false], [35, 50, false], [50, 22, false], [50, 78, false], [80, 22, true], [80, 78, true]],
-  "8": [[20, 22, false], [20, 78, false], [35, 50, false], [50, 22, false], [50, 78, false], [65, 50, true], [80, 22, true], [80, 78, true]],
-  "9": [[18, 22, false], [18, 78, false], [35, 22, false], [35, 78, false], [50, 50, false], [65, 22, true], [65, 78, true], [82, 22, true], [82, 78, true]],
-  "10": [[14, 22, false], [14, 78, false], [30, 22, false], [30, 78, false], [42, 50, false], [58, 50, true], [70, 22, true], [70, 78, true], [86, 22, true], [86, 78, true]],
-};
-const FACE_RANKS = new Set(["J", "Q", "K"]);
+// Real illustrated playing cards via <use> references into the SVG-cards
+// deck (David Bellot / htdebeer, LGPL 2.1 — see assets/SVG-CARDS-LICENSE.txt).
+const SUIT_ID = { "♠": "spade", "♥": "heart", "♦": "diamond", "♣": "club" };
+const RANK_ID = { "A": "1", "J": "jack", "Q": "queen", "K": "king" }; // 7-10 map to themselves
 
-function cardHtml(card, { dim = false, big = false, playable = false } = {}) {
+function cardSvgId(card) {
   const rank = card.slice(0, -1);
   const suit = card.slice(-1);
-  const color = RED_SUITS.has(suit) ? "red" : "black";
-  const classes = ["pcard", color];
+  return `${SUIT_ID[suit]}_${RANK_ID[rank] || rank}`;
+}
+
+function cardHtml(card, { dim = false, big = false, playable = false, mini = false } = {}) {
+  const classes = ["pcard-svg"];
   if (dim) classes.push("dim");
   if (big) classes.push("big");
   if (playable) classes.push("playable");
+  if (mini) classes.push("mini");
+  return `<svg class="${classes.join(" ")}" viewBox="0 0 169.075 244.640" data-card="${escapeHtml(card)}">
+    <use href="/assets/svg-cards.svg#${cardSvgId(card)}"></use>
+  </svg>`;
+}
 
-  let middle;
-  if (FACE_RANKS.has(rank)) {
-    middle = `<div class="pcard-face">
-      <div class="pcard-face-letter">${rank}</div>
-      <div class="pcard-face-suit">${suit}</div>
-    </div>`;
-  } else {
-    const layout = PIP_LAYOUTS[rank] || [];
-    const isAce = rank === "A";
-    const pips = layout.map(([top, left, flip]) => {
-      const cls = ["pcard-pip"];
-      if (flip) cls.push("flip");
-      if (isAce) cls.push("ace");
-      return `<span class="${cls.join(" ")}" style="top:${top}%;left:${left}%">${suit}</span>`;
-    }).join("");
-    middle = `<div class="pcard-pips">${pips}</div>`;
-  }
-
-  return `<div class="${classes.join(" ")}" data-card="${escapeHtml(card)}">
-    <div class="pcard-corner pcard-corner-tl"><span>${rank}</span><span class="pcard-suit-mini">${suit}</span></div>
-    ${middle}
-    <div class="pcard-corner pcard-corner-br"><span>${rank}</span><span class="pcard-suit-mini">${suit}</span></div>
-  </div>`;
+function cardBackHtml({ mini = false } = {}) {
+  const classes = ["pcard-svg", "card-back"];
+  if (mini) classes.push("mini");
+  return `<svg class="${classes.join(" ")}" viewBox="0 0 169.075 244.640">
+    <use href="/assets/svg-cards.svg#back"></use>
+  </svg>`;
 }
 
 // ---------------- Sound ----------------
@@ -371,8 +355,11 @@ document.getElementById("leave-room-btn").addEventListener("click", leaveRoom);
 document.getElementById("leave-after-game-btn").addEventListener("click", leaveRoom);
 
 function leaveRoom() {
-  if (ws) { ws.close(); ws = null; }
+  wsIntentionalClose = true;
   roomCode = null;
+  if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  if (ws) { ws.close(); ws = null; }
+  hideReconnectBanner();
   currentState = null;
   document.getElementById("room-lobby").classList.add("hidden");
   document.getElementById("table-stage").classList.add("hidden");
@@ -385,17 +372,57 @@ function leaveRoom() {
 }
 
 // ===========================================================
-// WebSocket
+// WebSocket — auto-reconnects on unexpected drops, so a hiccup never
+// leaves the player permanently "stuck" watching a stale board.
 // ===========================================================
+let wsIntentionalClose = false;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer = null;
+
 function connectWebSocket(code) {
-  if (ws) { ws.close(); }
+  if (ws) { wsIntentionalClose = true; ws.close(); }
+  wsIntentionalClose = false;
+  if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+
   ws = new WebSocket(wsUrl(`/ws/rooms/${code}?token=${encodeURIComponent(TOKEN)}`));
+
+  ws.onopen = () => {
+    wsReconnectAttempts = 0;
+    hideReconnectBanner();
+  };
+
   ws.onmessage = (event) => {
     const state = JSON.parse(event.data);
     currentState = state;
     render(state);
   };
-  ws.onclose = () => { /* could show a reconnect banner here */ };
+
+  ws.onclose = () => {
+    if (wsIntentionalClose || !roomCode) return;
+    showReconnectBanner();
+    wsReconnectAttempts += 1;
+    const delay = Math.min(1000 * wsReconnectAttempts, 5000);
+    wsReconnectTimer = setTimeout(() => {
+      if (roomCode) connectWebSocket(roomCode);
+    }, delay);
+  };
+}
+
+function showReconnectBanner() {
+  let el = document.getElementById("reconnect-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "reconnect-banner";
+    el.className = "reconnect-banner";
+    el.textContent = "Reconnecting…";
+    document.body.appendChild(el);
+  }
+  el.classList.remove("hidden");
+}
+
+function hideReconnectBanner() {
+  const el = document.getElementById("reconnect-banner");
+  if (el) el.classList.add("hidden");
 }
 
 function sendAction(action) {
@@ -501,7 +528,7 @@ function renderSeats(state) {
     let cardbacks = "";
     if (pos !== "bottom") {
       const n = parseInt(state.hand_counts[String(seat)] || 0, 10);
-      cardbacks = `<div class="seat-cardbacks">${Array.from({ length: n }).map(() => `<div class="card-back-mini"></div>`).join("")}</div>`;
+      cardbacks = `<div class="seat-cardbacks">${Array.from({ length: n }).map(() => cardBackHtml({ mini: true })).join("")}</div>`;
     }
     el.innerHTML = `
       <div class="${classes.join(" ")}">
@@ -620,7 +647,7 @@ function renderHand(state) {
     return cardHtml(card, { big: true, dim: myTurn && !playable, playable });
   }).join("");
   if (myTurn) {
-    row.querySelectorAll(".pcard.playable").forEach(el => {
+    row.querySelectorAll(".pcard-svg.playable").forEach(el => {
       el.addEventListener("click", () => sendAction({ action: "play_card", card: el.dataset.card }));
     });
   }

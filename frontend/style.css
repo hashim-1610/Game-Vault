@@ -373,13 +373,15 @@ button, input, select { font-family: inherit; }
 .seat-top { top: 34px; left: 50%; transform: translateX(-50%); }
 .seat-left { top: 50%; left: 34px; transform: translateY(-50%); }
 .seat-right { top: 50%; right: 34px; transform: translateY(-50%); }
-.seat-bottom { bottom: 180px; left: 50%; transform: translateX(-50%); }
+.seat-bottom { bottom: 205px; left: 50%; transform: translateX(-50%); }
 
 .seat-tag {
   display: flex; align-items: center; gap: 10px;
   background: rgba(0,0,0,0.38); border: 2px solid rgba(201,162,39,0.55);
   border-radius: 999px; padding: 7px 20px 7px 7px;
   transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+  pointer-events: none; /* purely informational — must never block clicks on
+                            cards it happens to visually overlap */
 }
 .seat-tag.turn { border-color: var(--gold); box-shadow: 0 0 0 4px rgba(201,162,39,0.3), 0 0 16px rgba(201,162,39,0.35); }
 .seat-tag.me { background: rgba(201,162,39,0.28); }
@@ -390,12 +392,6 @@ button, input, select { font-family: inherit; }
   margin-left: 2px;
 }
 .seat-cardbacks { display: flex; }
-.card-back-mini {
-  width: 26px; height: 37px; border-radius: 5px; margin-left: -10px;
-  background: repeating-linear-gradient(45deg, #0C4238, #0C4238 4px, #135445 4px, #135445 8px);
-  border: 1px solid var(--gold); box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-}
-.card-back-mini:first-child { margin-left: 0; }
 
 .stage-center {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -451,63 +447,48 @@ button, input, select { font-family: inherit; }
 }
 
 /* ===========================================================
-   Playing cards — real pip-based faces, bigger, animated
+   Playing cards — real illustrated SVG deck (see cardHtml() in app.js),
+   bigger, with idle glow on playable cards and a lively hover lift.
    =========================================================== */
-.pcard {
-  width: 88px; height: 126px;
-  background: linear-gradient(160deg, #FFFDF8, #F3ECDA);
-  border: 1px solid var(--gold);
-  border-radius: 11px;
+.pcard-svg {
+  width: 100px;
+  aspect-ratio: 169.075 / 244.640;
+  border-radius: 9px;
   box-shadow: 0 4px 10px rgba(8,48,42,0.4);
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-family: 'Fraunces', serif;
-  transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease;
+  display: block;
   flex-shrink: 0;
+  background: #fff;
+  transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease, filter 0.2s ease;
   animation: cardEnter 0.3s cubic-bezier(0.16,1,0.3,1);
 }
 @keyframes cardEnter {
   from { opacity: 0; transform: translateY(14px) scale(0.94); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.pcard.big { width: 108px; height: 154px; }
-.pcard.dim { opacity: 0.4; filter: grayscale(35%); }
-.pcard.playable { cursor: pointer; }
-.pcard.playable:hover {
-  transform: translateY(-14px) rotate(-1.5deg) scale(1.04);
-  box-shadow: 0 14px 24px rgba(0,0,0,0.5);
+.pcard-svg.big { width: 106px; }
+.pcard-svg.mini { width: 58px; border-radius: 6px; }
+.pcard-svg.dim { filter: grayscale(50%) brightness(0.7); opacity: 0.55; }
+
+.pcard-svg.playable {
+  cursor: pointer;
+  transform: translateY(-10px);
+  box-shadow: 0 8px 16px rgba(8,48,42,0.4), 0 0 0 3px rgba(201,162,39,0.55), 0 0 20px rgba(201,162,39,0.45);
+}
+.pcard-svg.playable:hover {
+  transform: translateY(-20px) rotate(-1.5deg) scale(1.05);
+  box-shadow: 0 16px 28px rgba(0,0,0,0.5), 0 0 0 3px var(--gold), 0 0 26px rgba(201,162,39,0.65);
   z-index: 10;
 }
-.pcard.playable:active { transform: translateY(-6px) scale(1.01); }
+.pcard-svg.playable:active { transform: translateY(-10px) scale(1.02); }
 
-.pcard-corner { position: absolute; display: flex; flex-direction: column; align-items: center; line-height: 1; font-weight: 700; font-size: 14px; }
-.pcard.big .pcard-corner { font-size: 16px; }
-.pcard-corner-tl { top: 6px; left: 7px; }
-.pcard-corner-br { bottom: 6px; right: 7px; transform: rotate(180deg); }
-.pcard-suit-mini { font-size: 12px; margin-top: -1px; }
-.pcard.red { color: var(--maroon); }
-.pcard.black { color: var(--ink); }
-
-.pcard-pips { position: absolute; inset: 0; }
-.pcard-pip { position: absolute; transform: translate(-50%, -50%); font-size: 17px; line-height: 1; }
-.pcard.big .pcard-pip { font-size: 21px; }
-.pcard-pip.flip { transform: translate(-50%, -50%) rotate(180deg); }
-.pcard-pip.ace { font-size: 34px; }
-.pcard.big .pcard-pip.ace { font-size: 42px; }
-
-.pcard-face {
-  position: absolute; inset: 12px; border: 1.5px solid currentColor; border-radius: 7px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  opacity: 0.94;
-}
-.pcard-face-letter { font-size: 30px; font-weight: 700; line-height: 1; }
-.pcard.big .pcard-face-letter { font-size: 38px; }
-.pcard-face-suit { font-size: 15px; margin-top: 4px; }
-.pcard.big .pcard-face-suit { font-size: 19px; }
+.seat-cardbacks .pcard-svg.mini { margin-left: -24px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+.seat-cardbacks .pcard-svg.mini:first-child { margin-left: 0; }
 
 .hand-row {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 12px; z-index: 3;
+  display: flex; gap: 8px; z-index: 3;
+  max-width: 84vw;
+  flex-wrap: wrap; justify-content: center;
 }
 
 .stage-info-corner { position: absolute; bottom: 24px; right: 24px; z-index: 3; display: flex; flex-direction: column; gap: 10px; }
@@ -533,14 +514,22 @@ button, input, select { font-family: inherit; }
 }
 .stage-log div { margin-bottom: 4px; }
 
+.reconnect-banner {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  background: rgba(155,34,66,0.92); color: #fff; padding: 10px 24px;
+  border-radius: 999px; font-weight: 700; font-size: 0.88rem; z-index: 999;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  animation: cardRise 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+.reconnect-banner.hidden { display: none; }
+
 @media (max-width: 720px) {
   .seat-left { left: 8px; } .seat-right { right: 8px; }
   .seat-tag .seat-name { font-size: 0.75rem; }
   .bid-panel { min-width: 270px; padding: 18px; }
   .bid-grid { grid-template-columns: repeat(5, 1fr); }
-  .pcard { width: 54px; height: 78px; } .pcard.big { width: 66px; height: 94px; }
-  .pcard-pip { font-size: 11px; } .pcard.big .pcard-pip { font-size: 13px; }
-  .pcard-face-letter { font-size: 20px; } .pcard.big .pcard-face-letter { font-size: 24px; }
+  .pcard-svg { width: 62px; } .pcard-svg.big { width: 84px; } .pcard-svg.mini { width: 40px; }
   .hand-row { flex-wrap: wrap; justify-content: center; max-width: 96vw; gap: 6px; }
+  .seat-bottom { bottom: 270px; }
   .mode-grid { grid-template-columns: 1fr; }
 }

@@ -113,10 +113,16 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def sorted_hand(hand):
+    """Group by suit, ascending rank within each suit — much easier to scan
+    than raw deal order."""
+    return sorted(hand, key=lambda c: (game.SUITS.index(game.card_suit(c)), game.rank_value(game.card_rank(c))))
+
+
 def serialize_state(state, my_seat):
     hands = state["hands"]
     hand_counts = {s: len(hands.get(s, [])) for s in range(4)}
-    my_hand = hands.get(my_seat, []) if my_seat is not None else []
+    my_hand = sorted_hand(hands.get(my_seat, [])) if my_seat is not None else []
     led_suit = game.card_suit(state["current_trick"][0][1]) if state["current_trick"] else None
     legal = []
     if my_seat is not None and state["phase"] == "playing" and state["turn"] == my_seat:
@@ -403,23 +409,27 @@ async def room_ws(websocket: WebSocket, code: str, token: str = None):
 
     try:
         while True:
-            msg = await websocket.receive_json()
-            await handle_action(code, username, msg)
-    except WebSocketDisconnect:
+            try:
+                msg = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                # Malformed message from this client — log and keep the
+                # connection alive rather than dropping them over one bad frame.
+                print(f"[ws receive error] user={username}: {type(e).__name__}: {e}")
+                continue
+            try:
+                await handle_action(code, username, msg)
+            except Exception as e:
+                # A bug in one action must never silently kill the socket —
+                # that's what "the game got stuck" looks like from the
+                # player's side. Log it, keep playing.
+                print(f"[handle_action error] action={msg.get('action')} user={username}: {type(e).__name__}: {e}")
+    finally:
         manager.disconnect(code, username)
 
 
 async def handle_action(code, username, msg):
-    """Wraps the real handler so a bug in one action can't silently kill a
-    player's WebSocket connection without at least logging what happened."""
-    try:
-        await _handle_action_inner(code, username, msg)
-    except Exception as e:
-        print(f"[handle_action error] action={msg.get('action')} user={username}: {type(e).__name__}: {e}")
-        raise
-
-
-async def _handle_action_inner(code, username, msg):
     action = msg.get("action")
     async with get_room_lock(code):
         state = ROOMS.get(code)
