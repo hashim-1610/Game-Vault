@@ -73,6 +73,7 @@
       <div class="game-hub-header">
         <h1>Choose a game</h1>
         <p>More card games are coming to the Vault — for now, dive into 28.</p>
+        <button class="rules-link-btn" id="rules-btn">📖 How to play 28</button>
       </div>
       <div class="game-grid">
         <button class="game-tile game-tile-active" id="game-tile-28">
@@ -105,6 +106,47 @@
             <div class="game-tile-sub">Coming soon</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Rules modal -->
+    <div id="rules-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <button class="modal-close" id="rules-close-btn">✕</button>
+        <h2>28 · Irupathiyettu</h2>
+        <p class="modal-sub">Kerala's classic 4-player trick-taking card game.</p>
+
+        <h3>Players &amp; teams</h3>
+        <p>4 players in fixed partnerships across the table — seats 1 &amp; 3 are Team A, seats 2 &amp; 4 are Team B. Partners sit opposite each other.</p>
+
+        <h3>The cards</h3>
+        <p>Only 8 ranks are used per suit, and their play-strength order is unusual: <b>7, 8, Q, K, 10, A, 9, J</b> (low to high) — the Jack is the strongest card in every suit, not the Ace.</p>
+        <p>Card points: <b>J = 3, 9 = 2, A = 1, 10 = 1</b>, and K / Q / 8 / 7 are worth 0. That's 28 points in the whole deck — hence the name.</p>
+
+        <h3>The deal</h3>
+        <p>The dealer rotates every round. Two deal styles are supported:</p>
+        <ul>
+          <li><b>Half Deal</b> (traditional) — everyone gets 4 cards, bidding happens, then the remaining 4 cards are dealt once trump is chosen.</li>
+          <li><b>Full Deal</b> — all 8 cards are dealt upfront, before bidding starts.</li>
+        </ul>
+
+        <h3>Bidding</h3>
+        <p>Starting to the dealer's left, players bid a number (minimum 14, maximum 28) they think their team can score, or pass. Each new bid must beat the current one. Bidding ends when only one bidder is left standing — if everyone passes, the dealer is forced to bid the minimum (14).</p>
+
+        <h3>Trump</h3>
+        <p>Whoever wins the bid picks a trump suit. This app reveals it to everyone immediately (a simplification for playability — traditionally it stays hidden until someone can't follow suit).</p>
+
+        <h3>Playing tricks</h3>
+        <p>The player left of the dealer leads the first trick. Everyone else must follow the suit that was led if they can; if not, any card — including trump — may be played. The highest trump played wins the trick, or if no trump was played, the highest card of the suit led wins. The winner leads the next trick.</p>
+
+        <h3>Scoring a round</h3>
+        <p>The bidding team needs to capture at least as many points as their bid, from the tricks they win. Meet or beat it → their team scores <b>+1 match point</b>. Fall short → the other team scores <b>+1 match point</b>.</p>
+
+        <h3>Royal Pair mode (optional)</h3>
+        <p>If one player holds both the King and Queen of trump, their team gets a <b>+4 point bonus</b> the instant trump is revealed.</p>
+
+        <h3>Winning</h3>
+        <p>First team to reach the room's target match-point score wins the game.</p>
       </div>
     </div>
 

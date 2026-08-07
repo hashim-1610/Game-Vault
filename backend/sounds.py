@@ -63,7 +63,8 @@ def _render_bytes(*segments):
 _SOUNDS = {
     "bid": _render_bytes(_tone(700, 700, 0.12, 0.28)),
     "pass": _render_bytes(_tone(300, 280, 0.12, 0.2)),
-    "deal": _render_bytes(_noise(0.3, 0.18)),
+    "deal": _render_bytes(_noise(0.12, 0.16)),
+    "card_play": _render_bytes(_noise(0.05, 0.16), _tone(220, 160, 0.06, 0.14)),
     "trump_reveal": _render_bytes(_tone(440, 440, 0.09, 0.3), _tone(554, 554, 0.09, 0.3), _tone(659, 659, 0.2, 0.35)),
     "cut": _render_bytes(_tone(220, 900, 0.18, 0.35)),
     "trick_win": _render_bytes(_tone(880, 880, 0.09, 0.28), _tone(1318, 1318, 0.16, 0.28)),

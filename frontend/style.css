@@ -159,6 +159,35 @@ button, input, select { font-family: inherit; }
 .game-hub-header { text-align: center; margin-bottom: 40px; }
 .game-hub-header h1 { font-size: 2.4rem; margin-bottom: 8px; }
 .game-hub-header p { color: var(--ink-soft); font-size: 1.05rem; }
+.rules-link-btn {
+  margin-top: 16px; background: none; border: 1.5px solid var(--gold); color: var(--teal-800);
+  padding: 9px 20px; border-radius: 999px; font-weight: 700; font-size: 0.88rem; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.rules-link-btn:hover { background: rgba(201,162,39,0.12); transform: translateY(-1px); }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(8,20,17,0.6); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal-card {
+  background: var(--surface); border-radius: 20px; box-shadow: var(--shadow-card-hover);
+  max-width: 640px; width: 100%; max-height: 84vh; overflow-y: auto;
+  padding: 36px 40px; position: relative;
+  animation: cardRise 0.3s cubic-bezier(0.16,1,0.3,1);
+}
+.modal-card h2 { margin-bottom: 2px; }
+.modal-sub { color: var(--ink-soft); margin: 0 0 20px 0; }
+.modal-card h3 { font-size: 1.02rem; margin: 20px 0 6px 0; color: var(--teal-700); }
+.modal-card p, .modal-card li { color: var(--ink); line-height: 1.55; font-size: 0.94rem; }
+.modal-card ul { margin: 4px 0; padding-left: 20px; }
+.modal-close {
+  position: absolute; top: 20px; right: 20px; width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: var(--page-bg); color: var(--ink-soft); font-size: 1rem; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.modal-close:hover { background: var(--maroon); color: #fff; transform: rotate(90deg); }
 
 .game-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px;
@@ -399,31 +428,61 @@ button, input, select { font-family: inherit; }
 }
 
 .bid-panel {
-  background: radial-gradient(ellipse at top, var(--teal-800), var(--teal-900));
-  border: 2px solid var(--gold); border-radius: 18px; padding: 26px 30px;
-  min-width: 340px; text-align: center; box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  background: linear-gradient(165deg, rgba(20,64,54,0.72), rgba(6,26,22,0.85));
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(231,203,107,0.35);
+  border-radius: 22px; padding: 28px 32px 26px 32px;
+  min-width: 360px; text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 rgba(255,255,255,0.08) inset;
   animation: cardRise 0.3s cubic-bezier(0.16,1,0.3,1);
 }
-.bid-panel-header { font-family: 'Fraunces', serif; font-size: 1.4rem; color: var(--gold-light); }
-.bid-panel-sub { font-size: 0.87rem; color: var(--cream); margin: 4px 0 12px 0; }
-.stake-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 14px; }
-.stake-pill { font-size: 0.74rem; font-weight: 700; padding: 4px 12px; border-radius: 999px; }
-.stake-pill.win { background: rgba(46,139,87,0.25); border: 1px solid #3f9d67; color: #bdeccf; }
-.stake-pill.lose { background: rgba(155,34,66,0.22); border: 1px solid var(--maroon); color: #f3c3d0; }
-.bid-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; margin-bottom: 14px; }
+.bid-panel-header {
+  font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 700; color: var(--cream);
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85rem;
+  margin-bottom: 2px;
+}
+.bid-panel-sub {
+  font-family: 'Fraunces', serif; font-size: 1.55rem; color: var(--gold-light);
+  margin: 2px 0 16px 0; font-weight: 600;
+}
+.stake-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 18px; }
+.stake-pill {
+  font-size: 0.72rem; font-weight: 700; padding: 5px 14px; border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.stake-pill.win { background: rgba(46,139,87,0.18); border: 1px solid rgba(63,157,103,0.55); color: #bdeccf; }
+.stake-pill.lose { background: rgba(155,34,66,0.16); border: 1px solid rgba(155,34,66,0.55); color: #f3c3d0; }
+.bid-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 16px; }
 .bid-grid-btn {
-  background: transparent; border: 1.5px solid var(--gold); color: var(--gold-light);
-  border-radius: 9px; padding: 9px 0; font-weight: 700; cursor: pointer; font-size: 0.92rem;
-  transition: all 0.15s cubic-bezier(0.16,1,0.3,1);
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(231,203,107,0.4); color: var(--gold-light);
+  border-radius: 10px; padding: 11px 0; font-weight: 700; cursor: pointer; font-size: 0.92rem;
+  font-family: 'Fraunces', serif;
+  transition: all 0.16s cubic-bezier(0.16,1,0.3,1);
 }
-.bid-grid-btn:hover { background: var(--gold); color: var(--teal-900); transform: translateY(-2px) scale(1.06); }
+.bid-grid-btn:hover {
+  background: linear-gradient(180deg, var(--gold-light), var(--gold)); color: var(--teal-900);
+  border-color: var(--gold); transform: translateY(-3px) scale(1.07);
+  box-shadow: 0 6px 16px rgba(201,162,39,0.4);
+}
+.bid-grid-btn:active { transform: translateY(-1px) scale(1.02); }
 .bid-pass-btn {
-  width: 100%; background: rgba(155,34,66,0.2); border: 1.5px solid var(--maroon);
-  color: #f3c3d0; border-radius: 9px; padding: 10px 0; font-weight: 700; cursor: pointer;
-  transition: all 0.15s ease;
+  width: 100%; background: rgba(155,34,66,0.12); border: 1px solid rgba(155,34,66,0.5);
+  color: #f3c3d0; border-radius: 10px; padding: 12px 0; font-weight: 700; cursor: pointer;
+  font-size: 0.88rem; letter-spacing: 0.03em;
+  transition: all 0.16s ease;
 }
-.bid-pass-btn:hover { background: rgba(155,34,66,0.35); transform: translateY(-1px); }
-.bid-waiting { color: var(--cream); font-size: 0.98rem; }
+.bid-pass-btn:hover { background: rgba(155,34,66,0.28); border-color: var(--maroon); transform: translateY(-2px); }
+.bid-pass-btn:active { transform: translateY(0); }
+.bid-waiting {
+  color: var(--cream); font-size: 0.95rem; padding: 6px 4px; position: relative;
+}
+.bid-waiting::after {
+  content: ""; display: block; width: 34px; height: 3px; margin: 12px auto 0 auto;
+  border-radius: 3px; background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  animation: waitPulse 1.4s ease-in-out infinite;
+}
+@keyframes waitPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
 
 .trump-panel {
   background: radial-gradient(ellipse at top, var(--teal-800), var(--teal-900));
@@ -438,6 +497,28 @@ button, input, select { font-family: inherit; }
 .trump-suit-btn.red { color: #e08fa4; }
 .trump-suit-btn:hover { background: var(--gold); color: var(--teal-900); transform: translateY(-3px) scale(1.08); }
 
+.dealing-banner {
+  color: var(--gold-light); font-family: 'Fraunces', serif; font-size: 1.3rem;
+  letter-spacing: 0.06em; text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  animation: waitPulse 1.1s ease-in-out infinite;
+  text-align: center;
+}
+
+/* ---- The deck: a small stack sitting at table center that dealt cards
+   visibly come from, shown only while a deal animation is in progress. ---- */
+.center-deck {
+  position: relative;
+  width: 100px; height: 145px;
+  margin: 0 auto 16px auto;
+}
+.center-deck .pcard-back {
+  position: absolute; top: 0; left: 0; width: 100px;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.45);
+}
+.center-deck .pcard-back:nth-child(1) { transform: rotate(-4deg) translate(-3px, 1px); }
+.center-deck .pcard-back:nth-child(2) { transform: rotate(2deg) translate(2px, -1px); }
+.center-deck .pcard-back:nth-child(3) { transform: rotate(-1deg); }
+
 .trick-row { display: flex; gap: 16px; align-items: flex-end; }
 .trick-slot { display: flex; flex-direction: column; align-items: center; gap: 5px; animation: trickDrop 0.35s cubic-bezier(0.16,1,0.3,1); }
 .trick-slot .trick-label { font-size: 0.7rem; color: var(--gold-light); font-weight: 600; }
@@ -450,24 +531,43 @@ button, input, select { font-family: inherit; }
    Playing cards — real illustrated SVG deck (see cardHtml() in app.js),
    bigger, with idle glow on playable cards and a lively hover lift.
    =========================================================== */
-.pcard-svg {
+.pcard-svg, .pcard-back {
   width: 100px;
   aspect-ratio: 169.075 / 244.640;
   border-radius: 9px;
   box-shadow: 0 4px 10px rgba(8,48,42,0.4);
   display: block;
   flex-shrink: 0;
-  background: #fff;
+  box-sizing: border-box;
   transition: transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease, filter 0.2s ease;
   animation: cardEnter 0.3s cubic-bezier(0.16,1,0.3,1);
 }
+.pcard-svg { background: #fff; }
 @keyframes cardEnter {
   from { opacity: 0; transform: translateY(14px) scale(0.94); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.pcard-svg.big { width: 106px; }
-.pcard-svg.mini { width: 58px; border-radius: 6px; }
+.pcard-svg.big, .pcard-back.big { width: 106px; }
+.pcard-svg.mini, .pcard-back.mini { width: 58px; border-radius: 6px; }
 .pcard-svg.dim { filter: grayscale(50%) brightness(0.7); opacity: 0.55; }
+
+/* ---- Custom card back — kasavu gold lattice on deep teal, matching the
+   table felt, instead of the illustrated deck's generic default back. ---- */
+.pcard-back {
+  position: relative;
+  border: 2px solid var(--gold);
+  background:
+    repeating-linear-gradient(45deg, rgba(231,203,107,0.16) 0 5px, transparent 5px 11px),
+    repeating-linear-gradient(-45deg, rgba(231,203,107,0.16) 0 5px, transparent 5px 11px),
+    linear-gradient(160deg, var(--teal-600), var(--teal-900) 70%);
+}
+.pcard-back::after {
+  content: "";
+  position: absolute; inset: 7%;
+  border: 1px solid rgba(231,203,107,0.55);
+  border-radius: 18%;
+}
+.pcard-back.mini::after { inset: 10%; border-width: 1px; }
 
 .pcard-svg.playable {
   cursor: pointer;
@@ -481,14 +581,34 @@ button, input, select { font-family: inherit; }
 }
 .pcard-svg.playable:active { transform: translateY(-10px) scale(1.02); }
 
-.seat-cardbacks .pcard-svg.mini { margin-left: -24px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
-.seat-cardbacks .pcard-svg.mini:first-child { margin-left: 0; }
+.seat-cardbacks .pcard-svg.mini, .seat-cardbacks .pcard-back.mini { margin-left: -24px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+.seat-cardbacks .pcard-svg.mini:first-child, .seat-cardbacks .pcard-back.mini:first-child { margin-left: 0; }
 
+/* ---- Hand: held like real cards — each one covers ~33% of its
+   left neighbour, fanned slightly around a low pivot so it reads as a
+   hand of cards rather than a strip. Per-card rotation/lift come from
+   --fan-rot / --fan-y custom properties set inline by renderHand(). ---- */
 .hand-row {
-  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 8px; z-index: 3;
-  max-width: 84vw;
-  flex-wrap: wrap; justify-content: center;
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; z-index: 3;
+  max-width: 94vw;
+  justify-content: center;
+  padding: 30px 10px 0 10px;
+}
+.hand-row .pcard-svg {
+  margin-left: -34px;
+  transform: rotate(var(--fan-rot, 0deg)) translateY(var(--fan-y, 0px));
+  transform-origin: 50% 130%;
+}
+.hand-row .pcard-svg:first-child { margin-left: 0; }
+.hand-row .pcard-svg:hover { z-index: 15; }
+.hand-row .pcard-svg.playable {
+  z-index: 5;
+  transform: translateY(-18px) rotate(var(--fan-rot, 0deg));
+}
+.hand-row .pcard-svg.playable:hover {
+  z-index: 20;
+  transform: translateY(-28px) rotate(-1.5deg) scale(1.05);
 }
 
 .stage-info-corner { position: absolute; bottom: 24px; right: 24px; z-index: 3; display: flex; flex-direction: column; gap: 10px; }

@@ -102,23 +102,21 @@ function cardSvgId(card) {
   return `${SUIT_ID[suit]}_${RANK_ID[rank] || rank}`;
 }
 
-function cardHtml(card, { dim = false, big = false, playable = false, mini = false } = {}) {
+function cardHtml(card, { dim = false, big = false, playable = false, mini = false, style = "" } = {}) {
   const classes = ["pcard-svg"];
   if (dim) classes.push("dim");
   if (big) classes.push("big");
   if (playable) classes.push("playable");
   if (mini) classes.push("mini");
-  return `<svg class="${classes.join(" ")}" viewBox="0 0 169.075 244.640" data-card="${escapeHtml(card)}">
+  return `<svg class="${classes.join(" ")}" style="${escapeHtml(style)}" viewBox="0 0 169.075 244.640" data-card="${escapeHtml(card)}">
     <use href="/assets/svg-cards.svg#${cardSvgId(card)}"></use>
   </svg>`;
 }
 
 function cardBackHtml({ mini = false } = {}) {
-  const classes = ["pcard-svg", "card-back"];
+  const classes = ["pcard-back"];
   if (mini) classes.push("mini");
-  return `<svg class="${classes.join(" ")}" viewBox="0 0 169.075 244.640">
-    <use href="/assets/svg-cards.svg#back"></use>
-  </svg>`;
+  return `<div class="${classes.join(" ")}"></div>`;
 }
 
 // ---------------- Sound ----------------
@@ -294,6 +292,17 @@ document.getElementById("back-to-hub-btn").addEventListener("click", () => {
   document.getElementById("game-hub").classList.remove("hidden");
 });
 
+// ---------------- Rules modal ----------------
+document.getElementById("rules-btn").addEventListener("click", () => {
+  document.getElementById("rules-modal").classList.remove("hidden");
+});
+document.getElementById("rules-close-btn").addEventListener("click", () => {
+  document.getElementById("rules-modal").classList.add("hidden");
+});
+document.getElementById("rules-modal").addEventListener("click", (e) => {
+  if (e.target.id === "rules-modal") e.target.classList.add("hidden");
+});
+
 document.querySelectorAll("#panel-play .seg-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#panel-play .seg-btn").forEach(b => b.classList.remove("active"));
@@ -393,8 +402,9 @@ function connectWebSocket(code) {
 
   ws.onmessage = (event) => {
     const state = JSON.parse(event.data);
+    const prev = currentState;
     currentState = state;
-    render(state);
+    handleIncomingState(prev, state);
   };
 
   ws.onclose = () => {
@@ -427,6 +437,226 @@ function hideReconnectBanner() {
 
 function sendAction(action) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(action));
+}
+
+// ===========================================================
+// Table animations — dealing, playing, and collecting tricks.
+// The server pushes full-state snapshots (real-time-authoritative), so all
+// of this is client-side interpolation between two consecutive snapshots:
+// diff prev -> state, animate the difference, then hand off to the plain
+// render() for the exact final layout. Never blocks on animation failure —
+// anything unexpected falls back to an instant render().
+// ===========================================================
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Backgrounded/throttled tabs can stall or never fire the Web Animations
+// API's `finished` promise — race it against a timeout so a flight
+// animation can never wedge the whole render pipeline.
+function animFinished(anim, timeoutMs = 700) {
+  return Promise.race([anim.finished.catch(() => {}), sleep(timeoutMs)]);
+}
+
+function rectCenter(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function htmlToEl(html) {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+
+function seatPositions(mySeat) {
+  return { bottom: mySeat, right: (mySeat + 1) % 4, top: (mySeat + 2) % 4, left: (mySeat + 3) % 4 };
+}
+
+function seatToPosMap(mySeat) {
+  const positions = seatPositions(mySeat);
+  const map = {};
+  for (const [pos, seat] of Object.entries(positions)) map[seat] = pos;
+  return map;
+}
+
+function sumCounts(counts) {
+  if (!counts) return 0;
+  return Object.values(counts).reduce((a, b) => a + b, 0);
+}
+
+function handleIncomingState(prev, state) {
+  try {
+    if (!prev || !["bidding", "choose_trump", "playing"].includes(state.phase)) {
+      render(state);
+      return;
+    }
+
+    const oldTrickLen = (prev.current_trick || []).length;
+    const newTrickLen = (state.current_trick || []).length;
+
+    // Server delayed the clear of a completed trick — sweep it toward the winner.
+    if (oldTrickLen === 4 && newTrickLen === 0 &&
+        prev.trick_winner !== null && prev.trick_winner !== undefined &&
+        document.querySelectorAll("#stage-center .trick-slot").length === 4) {
+      animateTrickCollect(prev, state).catch(e => { console.error(e); render(state); });
+      return;
+    }
+
+    // A single new card landed in the trick (including the 4th).
+    if (newTrickLen === oldTrickLen + 1 && newTrickLen >= 1) {
+      animateCardPlay(state).catch(e => { console.error(e); render(state); });
+      return;
+    }
+
+    // Hand sizes grew — a fresh deal or the half-deal top-up.
+    if (sumCounts(state.hand_counts) > sumCounts(prev.hand_counts)) {
+      animateDeal(prev, state).catch(e => { console.error(e); render(state); });
+      return;
+    }
+
+    render(state);
+  } catch (e) {
+    console.error("Animation dispatch failed, falling back to plain render:", e);
+    render(state);
+  }
+}
+
+// ---- Dealing: cards fly out from the table center to all 4 seats, one at
+// a time, in real dealing order, with a sound per card. ----
+async function flyCard({ toEl, isMine, mini }) {
+  const deckEl = document.querySelector("#stage-center .center-deck") || document.getElementById("stage-center");
+  const from = rectCenter(deckEl);
+  const to = toEl ? rectCenter(toEl) : from;
+  const w = mini ? 58 : 100;
+  const h = w * (244.640 / 169.075);
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `position:fixed; left:0; top:0; width:${w}px; height:${h}px; pointer-events:none; z-index:9999;`;
+  wrap.appendChild(htmlToEl(cardBackHtml({ mini })));
+  document.body.appendChild(wrap);
+  const rot = (Math.random() * 14 - 7).toFixed(1);
+  playSound("deal");
+  const anim = wrap.animate([
+    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`, opacity: 0 },
+    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.85) rotate(${rot}deg)`, opacity: 1, offset: 0.15 },
+    { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(${isMine ? 1 : 0.7}) rotate(0deg)`, opacity: 1 },
+  ], { duration: 340, easing: "cubic-bezier(0.16,1,0.3,1)" });
+  await animFinished(anim);
+  wrap.remove();
+}
+
+async function animateDeal(prevState, state) {
+  const mySeat = state.my_seat;
+  const seatToPos = seatToPosMap(mySeat);
+
+  const oldHand = prevState.hand || [];
+  const oldCounts = {}, newCounts = {}, delta = {};
+  let rounds = 0;
+  for (let s = 0; s < 4; s++) {
+    oldCounts[s] = parseInt((prevState.hand_counts || {})[String(s)] || 0, 10);
+    newCounts[s] = parseInt((state.hand_counts || {})[String(s)] || 0, 10);
+    delta[s] = Math.max(0, newCounts[s] - oldCounts[s]);
+    rounds = Math.max(rounds, delta[s]);
+  }
+
+  // Show the "before" picture (old hand / old cardback counts) so the deal
+  // animation has somewhere real to land instead of spoiling the result.
+  const shellState = { ...state, hand: oldHand, hand_counts: {} };
+  for (let s = 0; s < 4; s++) shellState.hand_counts[String(s)] = oldCounts[s];
+  renderSeats(shellState);
+  document.getElementById("hand-row").innerHTML = oldHand.map(c => cardHtml(c, { big: true })).join("");
+  document.getElementById("stage-center").innerHTML = `
+    <div class="center-deck">${cardBackHtml()}${cardBackHtml()}${cardBackHtml()}</div>
+    <div class="dealing-banner">Dealing…</div>
+  `;
+
+  const newOwnCards = state.hand.filter(c => !oldHand.includes(c));
+  let ownIdx = 0;
+  const dealOrder = [(state.dealer + 1) % 4, (state.dealer + 2) % 4, (state.dealer + 3) % 4, state.dealer % 4];
+
+  for (let r = 0; r < rounds; r++) {
+    for (const seat of dealOrder) {
+      if (delta[seat] <= r) continue;
+      const pos = seatToPos[seat];
+      const isMine = seat === mySeat;
+      const targetEl = pos === "bottom" ? document.getElementById("hand-row") : document.getElementById(`seat-${pos}`);
+      await flyCard({ toEl: targetEl, isMine, mini: !isMine });
+      if (isMine) {
+        const card = newOwnCards[ownIdx++];
+        if (card) document.getElementById("hand-row").insertAdjacentHTML("beforeend", cardHtml(card, { big: true }));
+      } else {
+        const container = document.querySelector(`#seat-${pos} .seat-cardbacks`);
+        if (container) container.appendChild(htmlToEl(cardBackHtml({ mini: true })));
+      }
+      await sleep(60);
+    }
+  }
+
+  render(state);
+}
+
+// ---- A card being played: flies from the player's seat to the trick area. ----
+async function animateCardPlay(state) {
+  const mySeat = state.my_seat;
+  const seatToPos = seatToPosMap(mySeat);
+  const [seat, card] = state.current_trick[state.current_trick.length - 1];
+  const pos = seatToPos[seat];
+  const isMine = seat === mySeat;
+
+  let sourceEl = null;
+  if (isMine) {
+    sourceEl = document.querySelector(`#hand-row .pcard-svg[data-card="${CSS.escape(card)}"]`);
+  } else {
+    sourceEl = document.getElementById(`seat-${pos}`);
+  }
+  const centerEl = document.getElementById("stage-center");
+  const from = sourceEl ? rectCenter(sourceEl) : rectCenter(centerEl);
+  const to = rectCenter(centerEl);
+  if (sourceEl && isMine) sourceEl.style.visibility = "hidden";
+
+  const w = 100, h = w * (244.640 / 169.075);
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `position:fixed; left:0; top:0; width:${w}px; height:${h}px; pointer-events:none; z-index:9999;`;
+  wrap.appendChild(htmlToEl(cardHtml(card, { big: true })));
+  document.body.appendChild(wrap);
+  playSound("card_play");
+  const rot = (Math.random() * 10 - 5).toFixed(1);
+  const anim = wrap.animate([
+    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.95)`, opacity: 1 },
+    { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(1) rotate(${rot}deg)`, opacity: 1 },
+  ], { duration: 260, easing: "cubic-bezier(0.16,1,0.3,1)" });
+  await animFinished(anim);
+  wrap.remove();
+  render(state);
+}
+
+// ---- A resolved trick sweeping off the table toward the winner. ----
+async function animateTrickCollect(prevState, state) {
+  const mySeat = state.my_seat;
+  const seatToPos = seatToPosMap(mySeat);
+  const winPos = seatToPos[prevState.trick_winner];
+  const targetEl = winPos === "bottom" ? document.getElementById("hand-row") : document.getElementById(`seat-${winPos}`);
+  const to = targetEl ? rectCenter(targetEl) : rectCenter(document.getElementById("stage-center"));
+
+  const slots = Array.from(document.querySelectorAll("#stage-center .trick-slot"));
+  const anims = slots.map((slot, i) => {
+    const r = slot.getBoundingClientRect();
+    slot.style.position = "fixed";
+    slot.style.left = `${r.left}px`;
+    slot.style.top = `${r.top}px`;
+    slot.style.width = `${r.width}px`;
+    slot.style.margin = "0";
+    slot.style.zIndex = "9999";
+    document.body.appendChild(slot);
+    const dx = to.x - (r.left + r.width / 2);
+    const dy = to.y - (r.top + r.height / 2);
+    const anim = slot.animate([
+      { transform: "translate(0,0) scale(1)", opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(0.5)`, opacity: 0 },
+    ], { duration: 380, delay: i * 45, easing: "cubic-bezier(0.4,0,0.7,1)", fill: "forwards" });
+    return animFinished(anim, 900);
+  });
+  await Promise.all(anims);
+  slots.forEach(s => s.remove());
+  render(state);
 }
 
 // ===========================================================
@@ -642,9 +872,17 @@ function renderHand(state) {
   const mySeat = state.my_seat;
   const legal = new Set(state.legal_moves || []);
   const myTurn = state.phase === "playing" && state.turn === mySeat;
-  row.innerHTML = state.hand.map(card => {
+  const n = state.hand.length;
+  // Fan the hand around a low pivot: middle card sits flat, cards toward
+  // either end rotate/lift slightly — reads as a hand of held cards.
+  const maxRot = Math.min(3.5, 22 / Math.max(n, 1));
+  row.innerHTML = state.hand.map((card, i) => {
     const playable = myTurn && legal.has(card);
-    return cardHtml(card, { big: true, dim: myTurn && !playable, playable });
+    const t = n > 1 ? (i / (n - 1)) * 2 - 1 : 0; // -1..1
+    const rot = (t * maxRot).toFixed(2);
+    const lift = (Math.abs(t) * Math.abs(t) * 8).toFixed(2);
+    const style = `--fan-rot:${rot}deg;--fan-y:${lift}px;`;
+    return cardHtml(card, { big: true, dim: myTurn && !playable, playable, style });
   }).join("");
   if (myTurn) {
     row.querySelectorAll(".pcard-svg.playable").forEach(el => {

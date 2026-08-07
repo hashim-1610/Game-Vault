@@ -94,6 +94,8 @@ def new_room_state(game_mode, deal_type, target_score):
         "trump_seat": None,
         "current_trick": [],
         "trick_leader": None,
+        "trick_winner": None,
+        "trick_pending_clear": False,
         "tricks_played": 0,
         "round_points": {0: 0, 1: 0},
         "match_score": {0: 0, 1: 0},
@@ -247,6 +249,11 @@ def legal_moves(hand, led_suit):
 
 
 def resolve_trick(state):
+    """Computes the trick winner and scores it, but deliberately leaves
+    current_trick populated (all 4 cards) and turn set to None — the caller
+    (main.py) broadcasts this "trick complete" state so players actually see
+    the last card land, then calls clear_trick() after a real-time pause to
+    sweep the trick away and hand the turn to the winner."""
     trick = state["current_trick"]
     trump = state["trump_suit"]
     led_suit = card_suit(trick[0][1])
@@ -257,14 +264,26 @@ def resolve_trick(state):
     wteam = team_of(winner_seat)
     state["round_points"][wteam] += points
     log(state, f"Seat {winner_seat + 1} wins the trick (+{points} pts) for {TEAM_LABEL[wteam]}.")
-    state["current_trick"] = []
     state["tricks_played"] += 1
+    state["trick_winner"] = winner_seat
+    state["trick_pending_clear"] = True
+    state["turn"] = None
+    emit(state, "trick_win")
+
+
+def clear_trick(state):
+    """Sweeps a completed trick off the table and hands the turn to whoever
+    won it. Called by main.py after a real-time display pause."""
+    winner_seat = state.get("trick_winner")
+    state["current_trick"] = []
+    state["trick_pending_clear"] = False
+    state["trick_winner"] = None
+    if winner_seat is None:
+        return
     state["trick_leader"] = winner_seat
     state["turn"] = winner_seat
     if state["tricks_played"] == 8:
         finish_round(state)
-    else:
-        emit(state, "trick_win")
 
 
 def finish_round(state):

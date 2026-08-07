@@ -160,6 +160,8 @@ def serialize_state(state, my_seat):
         "active_bidders": sorted(state["active_bidders"]),
         "trump_suit": state["trump_suit"],
         "current_trick": [[s, c] for s, c in state["current_trick"]],
+        "trick_winner": state.get("trick_winner"),
+        "trick_pending_clear": state.get("trick_pending_clear", False),
         "tricks_played": state["tricks_played"],
         "round_points": state["round_points"],
         "match_score": state["match_score"],
@@ -429,8 +431,27 @@ async def room_ws(websocket: WebSocket, code: str, token: str = None):
         manager.disconnect(code, username)
 
 
+async def finish_trick_after_delay(code):
+    """Runs config.TRICK_DISPLAY_SECONDS after a trick completes, so players
+    get a real look at the 4th card before it's swept off the table."""
+    await asyncio.sleep(config.TRICK_DISPLAY_SECONDS)
+    items = []
+    async with get_room_lock(code):
+        state = ROOMS.get(code)
+        if not state:
+            return
+        game.clear_trick(state)
+        items = game.drain_pending_stats(state)
+    if items:
+        await run_in_threadpool(auth.apply_pending_stats, items)
+    await manager.broadcast(code, state)
+    if any(p.get("bot") for p in state["players"].values()):
+        ensure_bot_loop(code)
+
+
 async def handle_action(code, username, msg):
     action = msg.get("action")
+    trick_pending = False
     async with get_room_lock(code):
         state = ROOMS.get(code)
         if not state:
@@ -472,6 +493,7 @@ async def handle_action(code, username, msg):
             card = msg.get("card")
             if state["phase"] == "playing" and state["turn"] == my_seat:
                 game.play_card(state, my_seat, card)
+                trick_pending = state.get("trick_pending_clear", False)
 
         elif action == "next_round":
             if state["phase"] == "round_over" and can_control_pacing(state, username):
@@ -491,7 +513,11 @@ async def handle_action(code, username, msg):
     if items:
         await run_in_threadpool(auth.apply_pending_stats, items)
     await manager.broadcast(code, state)
-    if any(p.get("bot") for p in state["players"].values()):
+    if trick_pending:
+        # Turn is None while the completed trick is on display, so the bot
+        # loop has nothing to do until finish_trick_after_delay reopens it.
+        asyncio.create_task(finish_trick_after_delay(code))
+    elif any(p.get("bot") for p in state["players"].values()):
         ensure_bot_loop(code)
 
 
