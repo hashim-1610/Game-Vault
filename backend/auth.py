@@ -88,17 +88,71 @@ def _get_pool():
     return _pool
 
 
+def _is_alive(conn):
+    """True if this pooled connection can still actually run a query.
+
+    conn.closed only reflects what the client knows; a server-side drop
+    (Neon suspends idle connections) isn't visible until something is
+    actually sent, so this does a cheap round-trip to find out. The
+    rollback first clears any aborted-transaction state left behind by a
+    previous failure, which would otherwise fail the probe on its own.
+    """
+    if conn.closed:
+        return False
+    try:
+        conn.rollback()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
 class _Conn:
+    """Pooled connection that survives the far end going away.
+
+    Hosted Postgres drops idle connections, and a plain pool will happily
+    hand a dead one back out: the query fails, then the rollback in
+    __exit__ fails too — masking the real error and leaking the connection
+    (it never makes it back to the pool). So validate on checkout, and
+    never let cleanup raise.
+    """
+
     def __enter__(self):
-        self.conn = _get_pool().getconn()
-        return self.conn
+        pool = _get_pool()
+        last_dead = None
+        for _ in range(3):
+            conn = pool.getconn()
+            if _is_alive(conn):
+                self.conn = conn
+                return conn
+            # Dead — evict it from the pool entirely rather than recycling
+            # it, and ask for another.
+            last_dead = conn
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+        raise psycopg2.InterfaceError(
+            "could not get a live database connection after 3 attempts "
+            f"(last: {last_dead})"
+        )
 
     def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            self.conn.commit()
-        else:
-            self.conn.rollback()
-        _get_pool().putconn(self.conn)
+        broken = False
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        except Exception:
+            # Connection died mid-request; don't let this mask whatever
+            # the caller was already raising.
+            broken = True
+        try:
+            _get_pool().putconn(self.conn, close=broken)
+        except Exception:
+            pass
 
 
 def _conn():

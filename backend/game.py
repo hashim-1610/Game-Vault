@@ -242,7 +242,11 @@ def choose_trump(state, suit):
                     # The bidder's own team holds it — a penalty, not a
                     # bonus, since bidding on top of the trump royal pair
                     # and still being called out for it costs you.
-                    state["round_points"][pteam] = max(0, state["round_points"][pteam] - 4)
+                    # NOT clamped at 0: trump is revealed before any trick is
+                    # played, so round_points is always 0 here and a clamp
+                    # would silently discard the entire penalty. Going
+                    # negative is what makes them have to earn it back.
+                    state["round_points"][pteam] -= 4
                     log(state, f"Royal Pair! Seat {seat+1} (bidding team) holds K+Q of trump — "
                                f"{TEAM_LABEL[pteam]} -4 penalty points.")
                 else:
@@ -390,18 +394,41 @@ def play_card(state, seat, card):
     return True
 
 
+# A bot's bid ceiling is derived from its hand strength. BASELINE is the
+# strength an average hand scores (so an average hand is only willing to
+# bid the minimum), and SCALE converts surplus strength into extra points
+# of bid. Without this mapping, strength (which lives on the same 0-28
+# scale as card points) was being added straight onto MIN_BID, so almost
+# every bot was willing to bid the maximum.
+BOT_BID_BASELINE = 14.0
+BOT_BID_SCALE = 0.55
+
+
 def _hand_strength(hand):
-    """Rough bid-worthiness of a hand: card points plus bonuses for a long
-    suit (likely trump control) and high trump-candidates (J/9), which
-    matter more than their raw point value once a suit is trump."""
+    """Bid-worthiness of a hand: card points plus bonuses for a long suit
+    (likely trump control) and high trump-candidates (J/9), which matter
+    more than their raw point value once a suit is trump.
+
+    Normalized to a full 8-card hand, so it means the same thing whether
+    the bot is looking at all 8 cards (full deal) or only the first 4
+    (half deal, where bidding happens before the top-up)."""
+    if not hand:
+        return 0.0
     points = sum(RANK_POINTS[card_rank(c)] for c in hand)
     suit_counts = {}
     for c in hand:
         suit_counts[card_suit(c)] = suit_counts.get(card_suit(c), 0) + 1
-    best_suit_len = max(suit_counts.values()) if suit_counts else 0
+    best_suit_len = max(suit_counts.values())
     jacks = sum(1 for c in hand if card_rank(c) == "J")
     nines = sum(1 for c in hand if card_rank(c) == "9")
-    return points + best_suit_len * 1.5 + jacks * 1.5 + nines
+    raw = points + best_suit_len * 1.5 + jacks * 1.5 + nines
+    return raw * (8.0 / len(hand))
+
+
+def _bot_bid_ceiling(hand):
+    """Highest bid this bot is willing to go to, given its hand."""
+    strength = _hand_strength(hand)
+    return MIN_BID + (strength - BOT_BID_BASELINE) * BOT_BID_SCALE
 
 
 def _bot_choose_card(state, moves, led_suit):
@@ -409,6 +436,8 @@ def _bot_choose_card(state, moves, led_suit):
     win as cheaply as possible when behind, bank points on a partner's
     winning trick, otherwise discard the least valuable card — instead of
     picking uniformly at random regardless of the situation."""
+    if not moves:
+        return None
     trump = state["trump_suit"]
     trick = state["current_trick"]
 
@@ -443,8 +472,8 @@ def _bot_choose_card(state, moves, led_suit):
 def _bot_act(state, seat):
     if state["phase"] == "bidding":
         hand = state["hands"][seat]
-        target = max(MIN_BID, min(MAX_BID, int(MIN_BID + _hand_strength(hand))))
-        willing = target + _SECURE_RANDOM.randint(-1, 2)  # a little variance so bots aren't perfectly readable
+        # +/- a point of variance so bots aren't perfectly readable.
+        willing = _bot_bid_ceiling(hand) + _SECURE_RANDOM.randint(-1, 1)
         next_bid = state["bid_value"] + 1
         if next_bid > MAX_BID or next_bid > willing:
             do_pass(state, seat)
@@ -458,7 +487,9 @@ def _bot_act(state, seat):
     elif state["phase"] == "playing" and state["turn"] == seat:
         led_suit = card_suit(state["current_trick"][0][1]) if state["current_trick"] else None
         moves = legal_moves(state["hands"][seat], led_suit)
-        play_card(state, seat, _bot_choose_card(state, moves, led_suit))
+        choice = _bot_choose_card(state, moves, led_suit)
+        if choice is not None:
+            play_card(state, seat, choice)
 
 
 def bot_step(state):

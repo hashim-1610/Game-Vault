@@ -105,6 +105,11 @@ function escapeHtml(s) {
 const SUIT_INDEX = { "♠": 0, "♥": 1, "♣": 2, "♦": 3 };
 const RANK_NUMBER = { "A": 1, "J": 11, "Q": 12, "K": 13 }; // 7-10 map to themselves
 
+// Browsers cache this 2MB sprite hard, which means edits to the artwork
+// silently don't show up until a manual hard-refresh. Bump this whenever
+// cards-v2.svg changes so everyone picks the new deck up immediately.
+const DECK_SPRITE = "/assets/cards-v2.svg?v=2";
+
 function cardSvgId(card) {
   const rank = card.slice(0, -1);
   const suit = card.slice(-1);
@@ -117,10 +122,26 @@ function cardHtml(card, { dim = false, big = false, playable = false, mini = fal
   if (big) classes.push("big");
   if (playable) classes.push("playable");
   if (mini) classes.push("mini");
-  // cards-v2.svg's own card faces already carry a corner pip in each
-  // corner — no need to draw our own index on top of it.
+  // The deck's own corner suit pips have been stripped from the sprite
+  // (see assets/strip_corner_pips.py) — the suit is already obvious from
+  // the card face, so the corner carries just the rank. Bottom-right is
+  // the same letter rotated 180deg about the card centre, which is exactly
+  // where the pip it replaces used to sit.
+  const rank = card.slice(0, -1);
+  const suit = card.slice(-1);
+  const fill = RED_SUITS.has(suit) ? "#D40000" : "#1A1A1A";
+  // The index column has to stay inside x 9-31: that's the clear margin
+  // before the face cards' frame (starts at 31.6) and the number cards'
+  // first pip (42.6). "10" is two glyphs, so it gets a smaller size to fit
+  // the same column.
+  const size = rank.length > 1 ? 19 : 26;
+  const rankText = `<text x="18" y="58" text-anchor="middle" fill="${fill}"
+      font-family="Georgia, 'Times New Roman', serif" font-weight="700"
+      font-size="${size}">${escapeHtml(rank)}</text>`;
   return `<svg class="${classes.join(" ")}" style="${escapeHtml(style)}" viewBox="0 0 227 315" data-card="${escapeHtml(card)}">
-    <use href="/assets/cards-v2.svg#${cardSvgId(card)}"></use>
+    <use href="${DECK_SPRITE}#${cardSvgId(card)}"></use>
+    <g class="pcard-rank">${rankText}</g>
+    <g class="pcard-rank" transform="rotate(180 113.5 157.5)">${rankText}</g>
   </svg>`;
 }
 
@@ -128,6 +149,19 @@ function cardBackHtml({ mini = false } = {}) {
   const classes = ["pcard-back"];
   if (mini) classes.push("mini");
   return `<div class="${classes.join(" ")}"></div>`;
+}
+
+// A card that can physically turn over: both faces live in the same 3D
+// space, and backface-visibility hides whichever one is pointing away, so
+// rotating the inner wrapper 0deg -> 180deg reads as a real flip rather
+// than a crossfade. Front is pre-rotated so 0deg shows the back.
+function flipCardHtml(card, { mini = false } = {}) {
+  return `<div class="card-flip">
+    <div class="card-flip-inner">
+      <div class="card-flip-face card-flip-back">${cardBackHtml({ mini })}</div>
+      <div class="card-flip-face card-flip-front">${cardHtml(card, { big: !mini, mini })}</div>
+    </div>
+  </div>`;
 }
 
 // ---------------- Sound ----------------
@@ -567,7 +601,7 @@ function handleIncomingState(prev, state) {
 
 // ---- Dealing: cards fly out from the table center to all 4 seats, one at
 // a time, in real dealing order, with a sound per card. ----
-async function flyCard({ toEl, isMine, mini }) {
+async function flyCard({ toEl, isMine, mini, revealCard = null }) {
   const deckEl = document.querySelector("#stage-center .center-deck") || document.getElementById("stage-center");
   const from = rectCenter(deckEl);
   const to = toEl ? rectCenter(toEl) : from;
@@ -581,17 +615,31 @@ async function flyCard({ toEl, isMine, mini }) {
   // that showed up as a brief flash in the viewport's top-left corner.
   wrap.style.transform = `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`;
   wrap.style.opacity = "0";
-  wrap.appendChild(htmlToEl(cardBackHtml({ mini })));
+  // Your own cards arrive face-down and turn over mid-flight; everyone
+  // else's stay face-down, so they only ever need a plain back.
+  wrap.appendChild(htmlToEl(revealCard ? flipCardHtml(revealCard, { mini }) : cardBackHtml({ mini })));
   document.body.appendChild(wrap);
   try {
     const rot = (Math.random() * 14 - 7).toFixed(1);
+    const duration = revealCard ? 420 : 220;
     playSound("deal");
     const anim = wrap.animate([
       { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`, opacity: 0 },
       { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.85) rotate(${rot}deg)`, opacity: 1, offset: 0.15 },
       { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(${isMine ? 1 : 0.7}) rotate(0deg)`, opacity: 1 },
-    ], { duration: 220, easing: "cubic-bezier(0.16,1,0.3,1)" });
-    await animFinished(anim, 500);
+    ], { duration, easing: "cubic-bezier(0.16,1,0.3,1)" });
+
+    const inner = wrap.querySelector(".card-flip-inner");
+    if (inner) {
+      // Hold face-down for the first stretch of the flight, then turn over
+      // as it settles — the reveal lands with the card, not before it.
+      inner.animate([
+        { transform: "rotateY(0deg)", offset: 0 },
+        { transform: "rotateY(0deg)", offset: 0.35 },
+        { transform: "rotateY(180deg)", offset: 1 },
+      ], { duration, easing: "cubic-bezier(0.4,0,0.2,1)", fill: "forwards" });
+    }
+    await animFinished(anim, duration + 300);
   } finally {
     // Always clean up, even if something above throws — an orphaned
     // position:fixed div is invisible-until-it-isn't and would otherwise
@@ -607,7 +655,8 @@ async function flyCard({ toEl, isMine, mini }) {
 async function shuffleFlourish() {
   const deck = document.querySelector("#stage-center .center-deck");
   if (!deck) return;
-  playSound("shuffle");
+  // No sound here on purpose — the synthesized shuffle textures all read as
+  // noise rather than cards. The visual riffle carries the moment instead.
   const cards = Array.from(deck.children);
   const anims = cards.map((el, i) => {
     const dx = (Math.random() * 2 - 1) * 55 + (i - 1) * 8;
@@ -636,6 +685,12 @@ async function animateDeal(prevState, state, myEpoch) {
     rounds = Math.max(rounds, delta[s]);
   }
 
+  // The very first deal arrives while the lobby is still on screen, so the
+  // table stage is display:none — every getBoundingClientRect() would read
+  // as 0x0 at (0,0) and the cards would fly to/from the viewport's top-left
+  // corner, on top of the lobby. Show the stage before measuring anything.
+  showTableStage();
+
   // Show the "before" picture (old hand / old cardback counts) so the deal
   // animation has somewhere real to land instead of spoiling the result.
   const shellState = { ...state, hand: oldHand, hand_counts: {} };
@@ -663,7 +718,10 @@ async function animateDeal(prevState, state, myEpoch) {
       const pos = seatToPos[seat];
       const isMine = seat === mySeat;
       const targetEl = pos === "bottom" ? document.getElementById("hand-row") : document.getElementById(`seat-${pos}`);
-      await flyCard({ toEl: targetEl, isMine, mini: !isMine });
+      // Peek at which card this will be so it can turn face-up in flight;
+      // it's dropped into the hand for real once it lands.
+      const incoming = isMine ? newOwnCards[ownIdx] : null;
+      await flyCard({ toEl: targetEl, isMine, mini: !isMine, revealCard: incoming });
       if (myEpoch !== animationEpoch) return;
       if (isMine) {
         const card = newOwnCards[ownIdx++];
@@ -771,6 +829,16 @@ function showTrumpToast(suit) {
     toast.classList.add("fade-out");
     setTimeout(() => toast.remove(), 400);
   }, 2000);
+}
+
+// Bring the table stage on screen (and clear the lobby/overlays off it).
+// Anything that measures table geometry must call this first — a hidden
+// stage measures as 0x0 at the viewport origin.
+function showTableStage() {
+  document.getElementById("room-lobby").classList.add("hidden");
+  document.getElementById("round-over-panel").classList.add("hidden");
+  document.getElementById("game-over-panel").classList.add("hidden");
+  document.getElementById("table-stage").classList.remove("hidden");
 }
 
 function render(state) {

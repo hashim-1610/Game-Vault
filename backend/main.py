@@ -210,15 +210,43 @@ async def bot_loop(room_code):
             state = ROOMS.get(room_code)
             if not state:
                 return
-            acted = game.bot_step(state)
+            try:
+                acted = game.bot_step(state)
+            except Exception as e:
+                # A crash here used to kill the whole loop silently, which
+                # from the player's side is indistinguishable from "the game
+                # froze". Log it and bail out of this tick instead.
+                print(f"[bot_step error] room={room_code}: {type(e).__name__}: {e}")
+                return
             items = game.drain_pending_stats(state) if acted else []
+            trick_pending = state.get("trick_pending_clear", False)
 
         if items:
             await run_in_threadpool(auth.apply_pending_stats, items)
-        if acted:
-            await manager.broadcast(room_code, state)
-        else:
+        if not acted:
             return
+        await manager.broadcast(room_code, state)
+
+        if trick_pending:
+            # The bot just played the 4th card: resolve_trick set turn=None
+            # and is waiting on a timed clear. Nothing else schedules that
+            # for bot-completed tricks (handle_action only covers the human
+            # case), so without this the table sits on a full trick forever.
+            schedule_task(finish_trick_after_delay(room_code))
+            return
+
+
+# asyncio only holds a weak reference to running tasks, so a fire-and-forget
+# create_task() can be garbage collected mid-flight. Keep a strong reference
+# until it finishes.
+_BACKGROUND_TASKS = set()
+
+
+def schedule_task(coro):
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
 
 
 def ensure_bot_loop(room_code):
@@ -380,6 +408,10 @@ async def join_room(code: str, username: str = Depends(get_current_username)):
             "username": username, "display_name": user["display_name"],
             "profile_pic": user["profile_pic"], "bot": False,
         }
+    # Everyone already sitting at this table needs to see the new arrival —
+    # without this their lobby keeps showing the seat as empty until some
+    # unrelated action happens to trigger the next broadcast.
+    await manager.broadcast(code, state)
     return {"seat": seat}
 
 
@@ -431,8 +463,10 @@ async def room_ws(websocket: WebSocket, code: str, token: str = None):
     payload = serialize_state(state, my_seat)
     payload["can_control_pacing"] = can_control_pacing(state, username)
     await websocket.send_json(payload)
-    if reclaimed:
-        await manager.broadcast(code, state)
+    # Push the room to everyone else too, so a newly-seated (or returning)
+    # player shows up on the other clients right away rather than whenever
+    # the next unrelated action happens to broadcast.
+    await manager.broadcast(code, state)
 
     try:
         while True:
@@ -557,7 +591,7 @@ async def handle_action(code, username, msg):
     if trick_pending:
         # Turn is None while the completed trick is on display, so the bot
         # loop has nothing to do until finish_trick_after_delay reopens it.
-        asyncio.create_task(finish_trick_after_delay(code))
+        schedule_task(finish_trick_after_delay(code))
     elif any(p.get("bot") for p in state["players"].values()):
         ensure_bot_loop(code)
 

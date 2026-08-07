@@ -590,6 +590,39 @@ button, input, select { font-family: inherit; }
   animation: cardEnter 0.3s cubic-bezier(0.16,1,0.3,1);
 }
 .pcard-svg { background: #fff; border: 1px solid rgba(60,64,67,0.16); }
+.pcard-rank { pointer-events: none; }
+/* On the small opponent card-backs the rank would be an illegible smudge. */
+.pcard-svg.mini .pcard-rank { display: none; }
+
+/* ---- Real 3D flip: both faces occupy the same space in a shared 3D
+   context, and backface-visibility hides whichever is turned away — so
+   rotating .card-flip-inner is an actual turn-over, not a crossfade.
+   The front starts pre-rotated so 0deg shows the back. ---- */
+.card-flip { width: 100%; height: 100%; perspective: 900px; }
+.card-flip-inner {
+  position: relative; width: 100%; height: 100%;
+  transform-style: preserve-3d;
+}
+.card-flip-face {
+  position: absolute; inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.card-flip-front { transform: rotateY(180deg); }
+/* Both faces must fill the flip box exactly, or the front and back won't
+   line up as it turns. Selectors carry the .big/.mini classes so they beat
+   those rules' fixed widths, which are declared later in this file. */
+.card-flip-face .pcard-svg,
+.card-flip-face .pcard-svg.big,
+.card-flip-face .pcard-svg.mini,
+.card-flip-face .pcard-back,
+.card-flip-face .pcard-back.big,
+.card-flip-face .pcard-back.mini {
+  width: 100%; height: 100%; aspect-ratio: auto;
+  /* the usual fade/rise-in would fight the flip mid-rotation */
+  animation: none;
+}
+
 @keyframes cardEnter {
   from { opacity: 0; transform: translateY(14px) scale(0.94); }
   to { opacity: 1; transform: translateY(0) scale(1); }
