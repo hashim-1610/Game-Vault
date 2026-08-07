@@ -13,14 +13,16 @@ asyncio.Lock, then the new state is broadcast to every connection in that
 room — each player gets their OWN hand and a filtered view (opponents'
 hands are never sent over the wire, only their card counts).
 
-Bot pacing: bot_loop() below performs one bot action, waits
-config.BOT_DELAY_SECONDS, checks again, and stops as soon as it's not a
-bot's turn. This is a real server-side delay, not a client polling trick —
-bots always play one card/bid at a time, visibly, never a whole hand at once.
+Bot pacing: bot_loop() below performs one bot action, waits a randomized
+interval (config.BOT_DELAY_MIN/MAX_SECONDS), checks again, and stops as
+soon as it's not a bot's turn. This is a real server-side delay, not a
+client polling trick — bots always play one card/bid at a time, visibly,
+never a whole hand at once.
 """
 
 import asyncio
 import os
+import random
 import time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Header, UploadFile, Form, File, Depends
@@ -113,10 +115,14 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+HAND_SUIT_ORDER = ["♠", "♣", "♥", "♦"]  # left-to-right display order in the hand row
+
+
 def sorted_hand(hand):
     """Group by suit, ascending rank within each suit — much easier to scan
-    than raw deal order."""
-    return sorted(hand, key=lambda c: (game.SUITS.index(game.card_suit(c)), game.rank_value(game.card_rank(c))))
+    than raw deal order. Display order is independent of game.SUITS (which
+    drives trump-selection order elsewhere)."""
+    return sorted(hand, key=lambda c: (HAND_SUIT_ORDER.index(game.card_suit(c)), game.rank_value(game.card_rank(c))))
 
 
 def serialize_state(state, my_seat):
@@ -135,6 +141,7 @@ def serialize_state(state, my_seat):
             players_public[str(s)] = {
                 "display_name": p["display_name"],
                 "bot": bool(p.get("bot", False)),
+                "stand_in": bool(p.get("stand_in", False)),
                 "profile_pic": p.get("profile_pic"),
                 "avatar_seed": p.get("avatar_seed"),
                 "is_me": (s == my_seat),
@@ -169,7 +176,10 @@ def serialize_state(state, my_seat):
         "game_mode": state["game_mode"],
         "deal_type": state["deal_type"],
         "round_summary": state["round_summary"],
+        "round_bidder_team": state.get("round_bidder_team"),
+        "round_bid_made": state.get("round_bid_made"),
         "game_over_summary": state["game_over_summary"],
+        "game_winner_team": state.get("game_winner_team"),
         "log": state["log"][-8:],
         "legal_moves": legal,
         "last_event": state["events"][-1]["type"] if state["events"] else None,
@@ -194,7 +204,7 @@ async def bot_loop(room_code):
         if not is_bot_turn:
             return
 
-        await asyncio.sleep(config.BOT_DELAY_SECONDS)
+        await asyncio.sleep(random.uniform(config.BOT_DELAY_MIN_SECONDS, config.BOT_DELAY_MAX_SECONDS))
 
         async with get_room_lock(room_code):
             state = ROOMS.get(room_code)
@@ -403,11 +413,26 @@ async def room_ws(websocket: WebSocket, code: str, token: str = None):
         await websocket.close(code=4403)
         return
 
+    # If this seat was auto-taken-over by a bot after a disconnect, hand it
+    # back now that the original player has reconnected.
+    reclaimed = False
+    async with get_room_lock(code):
+        state = ROOMS.get(code)
+        my_seat = seat_of_username(state, username) if state else None
+        player = state["players"].get(my_seat) if state and my_seat is not None else None
+        if player and player.get("stand_in"):
+            player["bot"] = False
+            player["stand_in"] = False
+            game.log(state, f"{player['display_name']} reconnected — back in seat {my_seat + 1}.")
+            reclaimed = True
+
     await manager.connect(code, username, websocket)
     my_seat = seat_of_username(state, username)
     payload = serialize_state(state, my_seat)
     payload["can_control_pacing"] = can_control_pacing(state, username)
     await websocket.send_json(payload)
+    if reclaimed:
+        await manager.broadcast(code, state)
 
     try:
         while True:
@@ -429,6 +454,22 @@ async def room_ws(websocket: WebSocket, code: str, token: str = None):
                 print(f"[handle_action error] action={msg.get('action')} user={username}: {type(e).__name__}: {e}")
     finally:
         manager.disconnect(code, username)
+        # Mid-game disconnects hand the seat to a bot so the table isn't
+        # stuck waiting on someone who's gone — reconnecting (above) hands
+        # it straight back.
+        stand_in_taken = False
+        async with get_room_lock(code):
+            state = ROOMS.get(code)
+            seat = seat_of_username(state, username) if state else None
+            player = state["players"].get(seat) if state and seat is not None else None
+            if player and not player.get("bot") and state["phase"] != "lobby":
+                player["bot"] = True
+                player["stand_in"] = True
+                game.log(state, f"{player['display_name']} disconnected — a bot is taking over seat {seat + 1}.")
+                stand_in_taken = True
+        if stand_in_taken:
+            await manager.broadcast(code, state)
+            ensure_bot_loop(code)
 
 
 async def finish_trick_after_delay(code):

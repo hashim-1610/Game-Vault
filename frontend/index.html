@@ -143,7 +143,7 @@
         <p>The bidding team needs to capture at least as many points as their bid, from the tricks they win. Meet or beat it → their team scores <b>+1 match point</b>. Fall short → the other team scores <b>+1 match point</b>.</p>
 
         <h3>Royal Pair mode (optional)</h3>
-        <p>If one player holds both the King and Queen of trump, their team gets a <b>+4 point bonus</b> the instant trump is revealed.</p>
+        <p>If one player holds both the King and Queen of trump, the instant trump is revealed: if that player is on the <b>bidding team, they get a −4 penalty</b>; if they're on the <b>other team, that team gets a +4 bonus</b>.</p>
 
         <h3>Winning</h3>
         <p>First team to reach the room's target match-point score wins the game.</p>
@@ -173,7 +173,7 @@
           <button type="button" class="mode-card" data-value="royal_pair">
             <div class="mode-card-icon">♛</div>
             <div class="mode-card-title">Royal Pair</div>
-            <div class="mode-card-desc">+4 bonus for K+Q of trump</div>
+            <div class="mode-card-desc">Trump K+Q: −4 to bidder, +4 to other team</div>
           </button>
         </div>
         <input type="hidden" name="game_mode" value="classic">
@@ -241,27 +241,29 @@
 
     <!-- Lobby / waiting room -->
     <div id="room-lobby" class="lobby-shell hidden">
-      <div class="lobby-topline">
-        <div class="lobby-code-block">
-          <div class="lobby-code-label">Room code</div>
-          <div class="lobby-code-value" id="lobby-room-code"></div>
+      <div class="lobby-card">
+        <div class="lobby-topline">
+          <div class="lobby-code-block">
+            <div class="lobby-code-label">Room code</div>
+            <div class="lobby-code-value" id="lobby-room-code"></div>
+          </div>
+          <div class="badge-row" id="lobby-badges"></div>
         </div>
-        <div class="badge-row" id="lobby-badges"></div>
-      </div>
-      <div class="lobby-teams">
-        <div class="lobby-team">
-          <div class="lobby-team-label">Team A</div>
-          <div class="lobby-team-seats" id="lobby-team-a"></div>
+        <div class="lobby-teams">
+          <div class="lobby-team">
+            <div class="lobby-team-label">Team A</div>
+            <div class="lobby-team-seats" id="lobby-team-a"></div>
+          </div>
+          <div class="lobby-vs">VS</div>
+          <div class="lobby-team">
+            <div class="lobby-team-label">Team B</div>
+            <div class="lobby-team-seats" id="lobby-team-b"></div>
+          </div>
         </div>
-        <div class="lobby-vs">VS</div>
-        <div class="lobby-team">
-          <div class="lobby-team-label">Team B</div>
-          <div class="lobby-team-seats" id="lobby-team-b"></div>
+        <div class="lobby-footer">
+          <button id="start-game-btn" class="btn btn-primary btn-large hidden">🚀 Start game</button>
+          <p id="lobby-hint" class="form-hint"></p>
         </div>
-      </div>
-      <div class="lobby-footer">
-        <button id="start-game-btn" class="btn btn-primary btn-large hidden">🚀 Start game</button>
-        <p id="lobby-hint" class="form-hint"></p>
       </div>
     </div>
 

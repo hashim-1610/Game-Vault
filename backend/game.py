@@ -101,6 +101,9 @@ def new_room_state(game_mode, deal_type, target_score):
         "match_score": {0: 0, 1: 0},
         "log": [],
         "round_summary": None,
+        "round_bidder_team": None,
+        "round_bid_made": None,
+        "game_winner_team": None,
         "game_mode": game_mode,          # "classic" | "royal_pair"
         "deal_type": deal_type,          # "half" | "full"
         "target_score": target_score,
@@ -230,13 +233,22 @@ def choose_trump(state, suit):
     emit(state, "trump_reveal")
 
     if state["game_mode"] == "royal_pair":
+        bidder_team = team_of(bidder)
         for seat, hand in state["hands"].items():
             ranks_here = {card_rank(c) for c in hand if card_suit(c) == suit}
             if {"K", "Q"}.issubset(ranks_here):
                 pteam = team_of(seat)
-                state["round_points"][pteam] += 4
-                log(state, f"Royal Pair! Seat {seat+1} holds K+Q of trump — "
-                           f"{TEAM_LABEL[pteam]} +4 bonus points.")
+                if pteam == bidder_team:
+                    # The bidder's own team holds it — a penalty, not a
+                    # bonus, since bidding on top of the trump royal pair
+                    # and still being called out for it costs you.
+                    state["round_points"][pteam] = max(0, state["round_points"][pteam] - 4)
+                    log(state, f"Royal Pair! Seat {seat+1} (bidding team) holds K+Q of trump — "
+                               f"{TEAM_LABEL[pteam]} -4 penalty points.")
+                else:
+                    state["round_points"][pteam] += 4
+                    log(state, f"Royal Pair! Seat {seat+1} holds K+Q of trump — "
+                               f"{TEAM_LABEL[pteam]} +4 bonus points.")
                 emit(state, "pair")
                 break
 
@@ -311,9 +323,11 @@ def finish_round(state):
                    f"(only scored {state['round_points'][bidder_team]}). "
                    f"{TEAM_LABEL[other_team]} +1 match point.")
     state["round_summary"] = result
+    state["round_bidder_team"] = bidder_team
+    state["round_bid_made"] = made
     state["phase"] = "round_over"
     log(state, result)
-    emit(state, "trick_win")
+    emit(state, "round_result")
 
     if max(state["match_score"].values()) >= state["target_score"]:
         end_game(state)
@@ -347,12 +361,13 @@ def end_game(state):
         state["stats_recorded"] = True
 
     state["phase"] = "game_over"
+    state["game_winner_team"] = winner
     state["game_over_summary"] = {
         "winner": TEAM_LABEL[winner], "margin": margin, "duration": duration,
         "score_a": state["match_score"][0], "score_b": state["match_score"][1],
     }
     log(state, f"Game over! {TEAM_LABEL[winner]} wins by {margin} point(s).")
-    emit(state, "game_win")
+    emit(state, "game_result")
 
 
 def play_card(state, seat, card):
@@ -375,12 +390,66 @@ def play_card(state, seat, card):
     return True
 
 
+def _hand_strength(hand):
+    """Rough bid-worthiness of a hand: card points plus bonuses for a long
+    suit (likely trump control) and high trump-candidates (J/9), which
+    matter more than their raw point value once a suit is trump."""
+    points = sum(RANK_POINTS[card_rank(c)] for c in hand)
+    suit_counts = {}
+    for c in hand:
+        suit_counts[card_suit(c)] = suit_counts.get(card_suit(c), 0) + 1
+    best_suit_len = max(suit_counts.values()) if suit_counts else 0
+    jacks = sum(1 for c in hand if card_rank(c) == "J")
+    nines = sum(1 for c in hand if card_rank(c) == "9")
+    return points + best_suit_len * 1.5 + jacks * 1.5 + nines
+
+
+def _bot_choose_card(state, moves, led_suit):
+    """Basic trick-taking sense: lead a probable winner or a safe low card,
+    win as cheaply as possible when behind, bank points on a partner's
+    winning trick, otherwise discard the least valuable card — instead of
+    picking uniformly at random regardless of the situation."""
+    trump = state["trump_suit"]
+    trick = state["current_trick"]
+
+    if not trick:
+        top = max(moves, key=lambda c: rank_value(card_rank(c)))
+        if card_rank(top) in ("J", "A"):
+            return top
+        return min(moves, key=lambda c: rank_value(card_rank(c)))
+
+    trump_in_trick = [(s, c) for s, c in trick if card_suit(c) == trump]
+    pool = trump_in_trick if trump_in_trick else [(s, c) for s, c in trick if card_suit(c) == led_suit]
+    winner_seat, winner_card = max(pool, key=lambda sc: rank_value(card_rank(sc[1])))
+
+    def beats(c):
+        if card_suit(c) == trump and card_suit(winner_card) != trump:
+            return True
+        if card_suit(c) == card_suit(winner_card):
+            return rank_value(card_rank(c)) > rank_value(card_rank(winner_card))
+        return False
+
+    if team_of(winner_seat) == team_of(state["turn"]):
+        # Partner's already winning — bank points rather than burn a winner.
+        return max(moves, key=lambda c: RANK_POINTS[card_rank(c)])
+
+    winners = [c for c in moves if beats(c)]
+    if winners:
+        return min(winners, key=lambda c: rank_value(card_rank(c)))
+
+    return min(moves, key=lambda c: (RANK_POINTS[card_rank(c)], rank_value(card_rank(c))))
+
+
 def _bot_act(state, seat):
     if state["phase"] == "bidding":
-        if _SECURE_RANDOM.random() < 0.55 or state["bid_value"] + 1 > MAX_BID:
+        hand = state["hands"][seat]
+        target = max(MIN_BID, min(MAX_BID, int(MIN_BID + _hand_strength(hand))))
+        willing = target + _SECURE_RANDOM.randint(-1, 2)  # a little variance so bots aren't perfectly readable
+        next_bid = state["bid_value"] + 1
+        if next_bid > MAX_BID or next_bid > willing:
             do_pass(state, seat)
         else:
-            do_bid(state, seat, state["bid_value"] + 1)
+            do_bid(state, seat, next_bid)
     elif state["phase"] == "choose_trump" and state["turn"] == seat:
         hand = state["hands"][seat]
         suit_counts = {s: sum(1 for c in hand if card_suit(c) == s) for s in SUITS}
@@ -389,7 +458,7 @@ def _bot_act(state, seat):
     elif state["phase"] == "playing" and state["turn"] == seat:
         led_suit = card_suit(state["current_trick"][0][1]) if state["current_trick"] else None
         moves = legal_moves(state["hands"][seat], led_suit)
-        play_card(state, seat, _SECURE_RANDOM.choice(moves))
+        play_card(state, seat, _bot_choose_card(state, moves, led_suit))
 
 
 def bot_step(state):

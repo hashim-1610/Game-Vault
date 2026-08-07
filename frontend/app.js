@@ -12,6 +12,11 @@ let ws = null;
 let roomCode = null;
 let lastSeenEventSeq = 0;
 let currentState = null;
+// Bumped on every incoming state; in-flight animations compare their own
+// captured value against this before painting anything, so a slow deal/play
+// animation from an old snapshot can never overwrite a newer render — this
+// is what was causing the UI to get stuck showing stale phases forever.
+let animationEpoch = 0;
 
 // ---------------- API helpers ----------------
 async function api(path, opts = {}) {
@@ -77,7 +82,9 @@ function avatarHtml(name, picUri, sizeClass = "avatar-md", botSeed = null) {
     return `<div class="avatar-fallback ${sizeClass}" style="background:${style.gradient}">${style.emoji}</div>`;
   }
   const initial = (name || "?").trim().charAt(0).toUpperCase();
-  const palette = ["#C9A227", "#0F5C46", "#9B2242", "#E7CB6B", "#10584A"];
+  // Mid-tone swatches only — light text (see .avatar-fallback) needs to stay
+  // readable against every one of these, so nothing near-black or near-white.
+  const palette = ["#B8863B", "#7A2048", "#2B4C7E", "#5C3A8E", "#1F6F63"];
   let hash = 0;
   for (const c of (name || "")) hash += c.charCodeAt(0);
   const color = palette[hash % palette.length];
@@ -91,15 +98,17 @@ function escapeHtml(s) {
 }
 
 // ---------------- Cards ----------------
-// Real illustrated playing cards via <use> references into the SVG-cards
-// deck (David Bellot / htdebeer, LGPL 2.1 — see assets/SVG-CARDS-LICENSE.txt).
-const SUIT_ID = { "♠": "spade", "♥": "heart", "♦": "diamond", "♣": "club" };
-const RANK_ID = { "A": "1", "J": "jack", "Q": "queen", "K": "king" }; // 7-10 map to themselves
+// Real illustrated playing cards via <use> references into cards-v2.svg —
+// Chris Aguilar's Vector Playing Card Graphics Set, LGPL, see
+// assets/DECK-LICENSE.txt. Symbols are indexed numerically: suit 0-3
+// (spade/heart/club/diamond), rank 1-13 (ace..king).
+const SUIT_INDEX = { "♠": 0, "♥": 1, "♣": 2, "♦": 3 };
+const RANK_NUMBER = { "A": 1, "J": 11, "Q": 12, "K": 13 }; // 7-10 map to themselves
 
 function cardSvgId(card) {
   const rank = card.slice(0, -1);
   const suit = card.slice(-1);
-  return `${SUIT_ID[suit]}_${RANK_ID[rank] || rank}`;
+  return `${SUIT_INDEX[suit]}_${RANK_NUMBER[rank] || rank}`;
 }
 
 function cardHtml(card, { dim = false, big = false, playable = false, mini = false, style = "" } = {}) {
@@ -108,8 +117,10 @@ function cardHtml(card, { dim = false, big = false, playable = false, mini = fal
   if (big) classes.push("big");
   if (playable) classes.push("playable");
   if (mini) classes.push("mini");
-  return `<svg class="${classes.join(" ")}" style="${escapeHtml(style)}" viewBox="0 0 169.075 244.640" data-card="${escapeHtml(card)}">
-    <use href="/assets/svg-cards.svg#${cardSvgId(card)}"></use>
+  // cards-v2.svg's own card faces already carry a corner pip in each
+  // corner — no need to draw our own index on top of it.
+  return `<svg class="${classes.join(" ")}" style="${escapeHtml(style)}" viewBox="0 0 227 315" data-card="${escapeHtml(card)}">
+    <use href="/assets/cards-v2.svg#${cardSvgId(card)}"></use>
   </svg>`;
 }
 
@@ -370,6 +381,11 @@ function leaveRoom() {
   if (ws) { ws.close(); ws = null; }
   hideReconnectBanner();
   currentState = null;
+  // Safety net: an in-flight card/trick animation appends elements
+  // straight to <body> (so they can fly anywhere on screen) — if one of
+  // those ever fails to clean itself up, this stops it from lingering on
+  // every screen after leaving the table.
+  document.querySelectorAll(".flying-card").forEach(el => el.remove());
   document.getElementById("room-lobby").classList.add("hidden");
   document.getElementById("table-stage").classList.add("hidden");
   document.getElementById("round-over-panel").classList.add("hidden");
@@ -483,7 +499,36 @@ function sumCounts(counts) {
   return Object.values(counts).reduce((a, b) => a + b, 0);
 }
 
+// Sound + toast side effects for a newly-seen server event. Deliberately
+// called unconditionally for every incoming message, BEFORE any animation
+// dispatch — those animations can be epoch-cancelled (see animationEpoch)
+// when a newer message supersedes them, and render() itself may never run
+// for a given message. Tying event side-effects to render() meant a
+// cancelled animation could silently drop its event (or worse, let a
+// later, unrelated event's render call consume the bookkeeping and fire
+// with mismatched details, e.g. an old trump_reveal toast never showing
+// while a newer event's render steals its "seen" slot).
+function processEvent(state) {
+  if (state.last_event_seq <= lastSeenEventSeq) return;
+  lastSeenEventSeq = state.last_event_seq;
+  const myTeam = state.my_seat % 2;
+  if (state.last_event === "round_result" && state.round_bidder_team !== null && state.round_bidder_team !== undefined) {
+    const myTeamMadeIt = (state.round_bidder_team === myTeam) === state.round_bid_made;
+    playSound(myTeamMadeIt ? "round_won" : "round_lost");
+  } else if (state.last_event === "game_result" && state.game_winner_team !== null && state.game_winner_team !== undefined) {
+    playSound(state.game_winner_team === myTeam ? "game_won" : "game_lost");
+  } else {
+    playSound(state.last_event);
+  }
+  if (state.last_event === "trump_reveal" && state.trump_suit) {
+    showTrumpToast(state.trump_suit);
+  }
+}
+
 function handleIncomingState(prev, state) {
+  animationEpoch += 1;
+  const myEpoch = animationEpoch;
+  processEvent(state);
   try {
     if (!prev || !["bidding", "choose_trump", "playing"].includes(state.phase)) {
       render(state);
@@ -496,20 +541,20 @@ function handleIncomingState(prev, state) {
     // Server delayed the clear of a completed trick — sweep it toward the winner.
     if (oldTrickLen === 4 && newTrickLen === 0 &&
         prev.trick_winner !== null && prev.trick_winner !== undefined &&
-        document.querySelectorAll("#stage-center .trick-slot").length === 4) {
-      animateTrickCollect(prev, state).catch(e => { console.error(e); render(state); });
+        document.querySelectorAll("#stage-center .trick-pile-card").length === 4) {
+      animateTrickCollect(prev, state, myEpoch).catch(e => { console.error(e); render(state); });
       return;
     }
 
     // A single new card landed in the trick (including the 4th).
     if (newTrickLen === oldTrickLen + 1 && newTrickLen >= 1) {
-      animateCardPlay(state).catch(e => { console.error(e); render(state); });
+      animateCardPlay(state, myEpoch).catch(e => { console.error(e); render(state); });
       return;
     }
 
     // Hand sizes grew — a fresh deal or the half-deal top-up.
     if (sumCounts(state.hand_counts) > sumCounts(prev.hand_counts)) {
-      animateDeal(prev, state).catch(e => { console.error(e); render(state); });
+      animateDeal(prev, state, myEpoch).catch(e => { console.error(e); render(state); });
       return;
     }
 
@@ -526,24 +571,58 @@ async function flyCard({ toEl, isMine, mini }) {
   const deckEl = document.querySelector("#stage-center .center-deck") || document.getElementById("stage-center");
   const from = rectCenter(deckEl);
   const to = toEl ? rectCenter(toEl) : from;
-  const w = mini ? 58 : 100;
-  const h = w * (244.640 / 169.075);
+  const w = mini ? 73 : 125;
+  const h = w * (315 / 227);
   const wrap = document.createElement("div");
+  wrap.className = "flying-card";
   wrap.style.cssText = `position:fixed; left:0; top:0; width:${w}px; height:${h}px; pointer-events:none; z-index:9999;`;
+  // Set the starting transform synchronously, matching the animation's
+  // first keyframe, so the element never has a frame at native (0,0) —
+  // that showed up as a brief flash in the viewport's top-left corner.
+  wrap.style.transform = `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`;
+  wrap.style.opacity = "0";
   wrap.appendChild(htmlToEl(cardBackHtml({ mini })));
   document.body.appendChild(wrap);
-  const rot = (Math.random() * 14 - 7).toFixed(1);
-  playSound("deal");
-  const anim = wrap.animate([
-    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`, opacity: 0 },
-    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.85) rotate(${rot}deg)`, opacity: 1, offset: 0.15 },
-    { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(${isMine ? 1 : 0.7}) rotate(0deg)`, opacity: 1 },
-  ], { duration: 340, easing: "cubic-bezier(0.16,1,0.3,1)" });
-  await animFinished(anim);
-  wrap.remove();
+  try {
+    const rot = (Math.random() * 14 - 7).toFixed(1);
+    playSound("deal");
+    const anim = wrap.animate([
+      { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.6)`, opacity: 0 },
+      { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.85) rotate(${rot}deg)`, opacity: 1, offset: 0.15 },
+      { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(${isMine ? 1 : 0.7}) rotate(0deg)`, opacity: 1 },
+    ], { duration: 220, easing: "cubic-bezier(0.16,1,0.3,1)" });
+    await animFinished(anim, 500);
+  } finally {
+    // Always clean up, even if something above throws — an orphaned
+    // position:fixed div is invisible-until-it-isn't and would otherwise
+    // sit on top of every screen (including the lobby) forever.
+    wrap.remove();
+  }
 }
 
-async function animateDeal(prevState, state) {
+// A riffle of the center deck stack before cards start flying out — each
+// card flies out to a random offset then snaps back to its resting spot,
+// staggered per card. Adapted from deck-of-cards.js.org's shuffle module
+// (fisherYates + per-card two-phase animateTo), reimplemented with WAAPI.
+async function shuffleFlourish() {
+  const deck = document.querySelector("#stage-center .center-deck");
+  if (!deck) return;
+  playSound("shuffle");
+  const cards = Array.from(deck.children);
+  const anims = cards.map((el, i) => {
+    const dx = (Math.random() * 2 - 1) * 55 + (i - 1) * 8;
+    const dy = -8 - i * 4;
+    const rot = (Math.random() * 2 - 1) * 22;
+    return el.animate([
+      { transform: "translate(0,0) rotate(0deg)", offset: 0 },
+      { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) rotate(${rot.toFixed(1)}deg)`, offset: 0.5 },
+      { transform: "translate(0,0) rotate(0deg)", offset: 1 },
+    ], { duration: 460, delay: i * 50, easing: "cubic-bezier(0.4,0,0.2,1)" });
+  });
+  await Promise.all(anims.map(a => animFinished(a, 750)));
+}
+
+async function animateDeal(prevState, state, myEpoch) {
   const mySeat = state.my_seat;
   const seatToPos = seatToPosMap(mySeat);
 
@@ -565,8 +644,13 @@ async function animateDeal(prevState, state) {
   document.getElementById("hand-row").innerHTML = oldHand.map(c => cardHtml(c, { big: true })).join("");
   document.getElementById("stage-center").innerHTML = `
     <div class="center-deck">${cardBackHtml()}${cardBackHtml()}${cardBackHtml()}</div>
-    <div class="dealing-banner">Dealing…</div>
+    <div class="dealing-banner">Shuffling…</div>
   `;
+
+  await shuffleFlourish();
+  if (myEpoch !== animationEpoch) return;
+  const banner = document.querySelector("#stage-center .dealing-banner");
+  if (banner) banner.textContent = "Dealing…";
 
   const newOwnCards = state.hand.filter(c => !oldHand.includes(c));
   let ownIdx = 0;
@@ -574,11 +658,13 @@ async function animateDeal(prevState, state) {
 
   for (let r = 0; r < rounds; r++) {
     for (const seat of dealOrder) {
+      if (myEpoch !== animationEpoch) return;
       if (delta[seat] <= r) continue;
       const pos = seatToPos[seat];
       const isMine = seat === mySeat;
       const targetEl = pos === "bottom" ? document.getElementById("hand-row") : document.getElementById(`seat-${pos}`);
       await flyCard({ toEl: targetEl, isMine, mini: !isMine });
+      if (myEpoch !== animationEpoch) return;
       if (isMine) {
         const card = newOwnCards[ownIdx++];
         if (card) document.getElementById("hand-row").insertAdjacentHTML("beforeend", cardHtml(card, { big: true }));
@@ -586,15 +672,16 @@ async function animateDeal(prevState, state) {
         const container = document.querySelector(`#seat-${pos} .seat-cardbacks`);
         if (container) container.appendChild(htmlToEl(cardBackHtml({ mini: true })));
       }
-      await sleep(60);
+      await sleep(35);
     }
   }
 
+  if (myEpoch !== animationEpoch) return;
   render(state);
 }
 
 // ---- A card being played: flies from the player's seat to the trick area. ----
-async function animateCardPlay(state) {
+async function animateCardPlay(state, myEpoch) {
   const mySeat = state.my_seat;
   const seatToPos = seatToPosMap(mySeat);
   const [seat, card] = state.current_trick[state.current_trick.length - 1];
@@ -612,31 +699,38 @@ async function animateCardPlay(state) {
   const to = rectCenter(centerEl);
   if (sourceEl && isMine) sourceEl.style.visibility = "hidden";
 
-  const w = 100, h = w * (244.640 / 169.075);
+  const w = 125, h = w * (315 / 227);
   const wrap = document.createElement("div");
+  wrap.className = "flying-card";
   wrap.style.cssText = `position:fixed; left:0; top:0; width:${w}px; height:${h}px; pointer-events:none; z-index:9999;`;
+  // Same fix as flyCard: avoid a one-frame flash at native (0,0).
+  wrap.style.transform = `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.95)`;
   wrap.appendChild(htmlToEl(cardHtml(card, { big: true })));
   document.body.appendChild(wrap);
-  playSound("card_play");
-  const rot = (Math.random() * 10 - 5).toFixed(1);
-  const anim = wrap.animate([
-    { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.95)`, opacity: 1 },
-    { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(1) rotate(${rot}deg)`, opacity: 1 },
-  ], { duration: 260, easing: "cubic-bezier(0.16,1,0.3,1)" });
-  await animFinished(anim);
-  wrap.remove();
+  try {
+    playSound("card_play");
+    const rot = (Math.random() * 10 - 5).toFixed(1);
+    const anim = wrap.animate([
+      { transform: `translate(${from.x - w / 2}px, ${from.y - h / 2}px) scale(0.95)`, opacity: 1 },
+      { transform: `translate(${to.x - w / 2}px, ${to.y - h / 2}px) scale(1) rotate(${rot}deg)`, opacity: 1 },
+    ], { duration: 260, easing: "cubic-bezier(0.16,1,0.3,1)" });
+    await animFinished(anim);
+  } finally {
+    wrap.remove();
+  }
+  if (myEpoch !== animationEpoch) return;
   render(state);
 }
 
 // ---- A resolved trick sweeping off the table toward the winner. ----
-async function animateTrickCollect(prevState, state) {
+async function animateTrickCollect(prevState, state, myEpoch) {
   const mySeat = state.my_seat;
   const seatToPos = seatToPosMap(mySeat);
   const winPos = seatToPos[prevState.trick_winner];
   const targetEl = winPos === "bottom" ? document.getElementById("hand-row") : document.getElementById(`seat-${winPos}`);
   const to = targetEl ? rectCenter(targetEl) : rectCenter(document.getElementById("stage-center"));
 
-  const slots = Array.from(document.querySelectorAll("#stage-center .trick-slot"));
+  const slots = Array.from(document.querySelectorAll("#stage-center .trick-pile-card"));
   const anims = slots.map((slot, i) => {
     const r = slot.getBoundingClientRect();
     slot.style.position = "fixed";
@@ -645,6 +739,7 @@ async function animateTrickCollect(prevState, state) {
     slot.style.width = `${r.width}px`;
     slot.style.margin = "0";
     slot.style.zIndex = "9999";
+    slot.classList.add("flying-card");
     document.body.appendChild(slot);
     const dx = to.x - (r.left + r.width / 2);
     const dy = to.y - (r.top + r.height / 2);
@@ -654,20 +749,31 @@ async function animateTrickCollect(prevState, state) {
     ], { duration: 380, delay: i * 45, easing: "cubic-bezier(0.4,0,0.7,1)", fill: "forwards" });
     return animFinished(anim, 900);
   });
-  await Promise.all(anims);
-  slots.forEach(s => s.remove());
+  try {
+    await Promise.all(anims);
+  } finally {
+    slots.forEach(s => s.remove());
+  }
+  if (myEpoch !== animationEpoch) return;
   render(state);
 }
 
 // ===========================================================
 // Rendering — the big one. Dispatches on state.phase.
 // ===========================================================
-function render(state) {
-  if (state.last_event_seq > lastSeenEventSeq) {
-    playSound(state.last_event);
-    lastSeenEventSeq = state.last_event_seq;
-  }
+function showTrumpToast(suit) {
+  document.querySelectorAll(".trump-toast").forEach(el => el.remove());
+  const toast = document.createElement("div");
+  toast.className = "trump-toast";
+  toast.textContent = `Trump revealed: ${suit}`;
+  document.getElementById("table-stage").appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("fade-out");
+    setTimeout(() => toast.remove(), 400);
+  }, 2000);
+}
 
+function render(state) {
   document.getElementById("room-lobby").classList.add("hidden");
   document.getElementById("table-stage").classList.add("hidden");
   document.getElementById("round-over-panel").classList.add("hidden");
@@ -750,22 +856,27 @@ function renderSeats(state) {
     const el = document.getElementById(`seat-${pos}`);
     const p = state.players[String(seat)];
     if (!p) { el.innerHTML = ""; continue; }
+    const isDealer = seat === state.dealer;
     const classes = ["seat-tag"];
     if (seat === state.turn) classes.push("turn");
     if (seat === mySeat) classes.push("me");
-    const dealerDot = seat === state.dealer ? `<span class="seat-dealer-dot">D</span>` : "";
-    const botTag = p.bot ? " 🤖" : "";
+    if (isDealer) classes.push("dealer");
+    const dealerChip = isDealer ? `<span class="dealer-chip">🃏 Dealer</span>` : "";
+    const botTag = p.stand_in ? " 🤖 (away)" : (p.bot ? " 🤖" : "");
     let cardbacks = "";
     if (pos !== "bottom") {
       const n = parseInt(state.hand_counts[String(seat)] || 0, 10);
-      cardbacks = `<div class="seat-cardbacks">${Array.from({ length: n }).map(() => cardBackHtml({ mini: true })).join("")}</div>`;
+      const orient = pos === "left" ? "seat-cardbacks-v seat-cardbacks-left"
+        : pos === "right" ? "seat-cardbacks-v seat-cardbacks-right"
+        : "seat-cardbacks-h";
+      cardbacks = `<div class="seat-cardbacks ${orient}">${Array.from({ length: n }).map(() => cardBackHtml({ mini: true })).join("")}</div>`;
     }
     el.innerHTML = `
       <div class="${classes.join(" ")}">
         ${avatarHtml(p.display_name, p.profile_pic, "avatar-md", p.avatar_seed)}
         <span class="seat-name">${escapeHtml(p.display_name)}${botTag}</span>
-        ${dealerDot}
       </div>
+      ${dealerChip}
       ${cardbacks}
     `;
   }
@@ -777,8 +888,12 @@ function renderScores(state) {
   const otherTeam = 1 - myTeam;
   document.getElementById("score-match-us").textContent = state.match_score[myTeam];
   document.getElementById("score-match-them").textContent = state.match_score[otherTeam];
-  document.getElementById("score-round-us").textContent = state.round_points[myTeam];
-  document.getElementById("score-round-them").textContent = state.round_points[otherTeam];
+  // Once a bid is on the table, show progress toward it (points/bid) —
+  // easier to track than a bare point count.
+  const hasBid = state.bid_seat !== null && state.bid_seat !== undefined;
+  const bidSuffix = hasBid ? `/${state.bid_value}` : "";
+  document.getElementById("score-round-us").textContent = `${state.round_points[myTeam]}${bidSuffix}`;
+  document.getElementById("score-round-them").textContent = `${state.round_points[otherTeam]}${bidSuffix}`;
 }
 
 function renderInfoCorner(state) {
@@ -810,17 +925,27 @@ function renderCenter(state) {
     const minNext = Math.max(state.bid_value + 1, state.min_bid);
     const values = [];
     for (let v = minNext; v <= state.max_bid; v++) values.push(v);
+    const BID_CAP = 20; // most bids never go past this — hide the rest behind a toggle
+    const hasExtra = values.some(v => v > BID_CAP);
     center.innerHTML = `
       <div class="bid-panel">
         <div class="bid-panel-header">Your Bid</div>
         <div class="bid-panel-sub">${state.bid_seat !== null ? `To beat: ${state.bid_value}` : "No bids yet"}</div>
         <div class="stake-row"><span class="stake-pill win">Win +1</span><span class="stake-pill lose">Lose −1</span></div>
         <div class="bid-grid">
-          ${values.map(v => `<button class="bid-grid-btn" data-bid="${v}">${v}</button>`).join("")}
+          ${values.map(v => `<button class="bid-grid-btn${v > BID_CAP ? " hidden bid-grid-extra" : ""}" data-bid="${v}">${v}</button>`).join("")}
         </div>
+        ${hasExtra ? `<button type="button" class="bid-more-btn" id="bid-more-btn">Show bids above ${BID_CAP} ▾</button>` : ""}
         <button class="bid-pass-btn" id="bid-pass-btn">Pass</button>
       </div>
     `;
+    const moreBtn = document.getElementById("bid-more-btn");
+    if (moreBtn) {
+      moreBtn.addEventListener("click", () => {
+        center.querySelectorAll(".bid-grid-extra").forEach(el => el.classList.remove("hidden"));
+        moreBtn.remove();
+      });
+    }
     center.querySelectorAll("[data-bid]").forEach(btn => {
       btn.addEventListener("click", () => {
         const val = parseInt(btn.dataset.bid, 10);
@@ -854,12 +979,16 @@ function renderCenter(state) {
 
   if (state.phase === "playing") {
     if (!state.current_trick.length) {
-      center.innerHTML = `<div class="trick-row"></div>`;
+      center.innerHTML = `<div class="trick-pile"></div>`;
       return;
     }
-    center.innerHTML = `<div class="trick-row">${state.current_trick.map(([seat, card]) => {
-      const name = state.players[String(seat)]?.display_name || `Seat ${seat + 1}`;
-      return `<div class="trick-slot">${cardHtml(card)}<div class="trick-label">${escapeHtml(name)}</div></div>`;
+    // A clean 2x2 grid, zero overlap — every card fully visible, placed
+    // by play order (top-left, top-right, bottom-left, bottom-right).
+    const gridOffsets = [[-70, -96], [70, -96], [-70, 96], [70, 96]];
+    center.innerHTML = `<div class="trick-pile">${state.current_trick.map(([seat, card], i) => {
+      const [jx, jy] = gridOffsets[i % gridOffsets.length];
+      const style = `--pile-rot:0deg;--pile-x:${jx}px;--pile-y:${jy}px;`;
+      return `<div class="trick-pile-card" style="${style}">${cardHtml(card)}</div>`;
     }).join("")}</div>`;
     return;
   }
@@ -872,17 +1001,9 @@ function renderHand(state) {
   const mySeat = state.my_seat;
   const legal = new Set(state.legal_moves || []);
   const myTurn = state.phase === "playing" && state.turn === mySeat;
-  const n = state.hand.length;
-  // Fan the hand around a low pivot: middle card sits flat, cards toward
-  // either end rotate/lift slightly — reads as a hand of held cards.
-  const maxRot = Math.min(3.5, 22 / Math.max(n, 1));
-  row.innerHTML = state.hand.map((card, i) => {
+  row.innerHTML = state.hand.map(card => {
     const playable = myTurn && legal.has(card);
-    const t = n > 1 ? (i / (n - 1)) * 2 - 1 : 0; // -1..1
-    const rot = (t * maxRot).toFixed(2);
-    const lift = (Math.abs(t) * Math.abs(t) * 8).toFixed(2);
-    const style = `--fan-rot:${rot}deg;--fan-y:${lift}px;`;
-    return cardHtml(card, { big: true, dim: myTurn && !playable, playable, style });
+    return cardHtml(card, { big: true, dim: myTurn && !playable, playable });
   }).join("");
   if (myTurn) {
     row.querySelectorAll(".pcard-svg.playable").forEach(el => {

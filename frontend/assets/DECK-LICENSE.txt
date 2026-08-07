@@ -1,0 +1,11 @@
+Playing card face artwork: Chris Aguilar's Vector Playing Card Graphics Set
+(http://sourceforge.net/projects/vector-cards/), as redistributed by the
+deck-of-cards project (https://github.com/deck-of-cards/deck-of-cards,
+https://deck-of-cards.js.org/).
+
+Licensed under the GNU Lesser General Public License v3 (LGPLv3):
+https://www.gnu.org/licenses/lgpl-3.0.html
+
+cards-v2.svg in this directory combines the individual per-card SVGs from
+that project's example/faces/ directory into a single <symbol> sprite for
+use with <use href="#suit_rank">. No artwork was otherwise modified.
